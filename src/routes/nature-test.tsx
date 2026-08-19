@@ -1,15 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import WorldLayoutEditor from "@/components/pixel/WorldLayoutEditor";
+import NatureMapEditor from "@/components/pixel/NatureMapEditor";
 
 export const Route = createFileRoute("/nature-test")({
   head: () => ({
     meta: [
-      { title: "Pixel Chat — World Layout Editor" },
+      { title: "Pixel Chat — Nature World Map" },
       {
         name: "description",
-        content: "Pixel Chat manual world layout editor on the locked isometric world template.",
+        content: "Pixel Chat nature world using the fixed hand-designed map artwork.",
       },
     ],
   }),
-  component: WorldLayoutEditor,
+  component: NatureMapEditor,
 });
