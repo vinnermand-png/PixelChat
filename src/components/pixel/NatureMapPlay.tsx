@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const MAP_W = 1254;
 const MAP_H = 1254;
@@ -10,30 +10,46 @@ const PIVOT_Y = 62;
 const WALK_FPS = 10;
 const SPEED = 150;
 
-const DIRECTIONS = [
-  "south",
-  "south_west",
-  "west",
-  "north_west",
-  "north",
-  "north_east",
-  "east",
-  "south_east",
-] as const;
-type Direction = (typeof DIRECTIONS)[number];
+type Direction =
+  | "south"
+  | "south_west"
+  | "west"
+  | "north_west"
+  | "north"
+  | "north_east"
+  | "east"
+  | "south_east";
+
 type Vec2 = { x: number; y: number };
 
 const START: Vec2 = { x: 627, y: 520 };
 
+const DIR_FILES: Record<Direction, { folder: string; idle: string; walk: string }> = {
+  south: { folder: "south", idle: "south", walk: "south" },
+  south_west: { folder: "south_west", idle: "southwest", walk: "southwest" },
+  west: { folder: "west", idle: "west", walk: "west" },
+  north_west: { folder: "north_west", idle: "northwest", walk: "northwest" },
+  north: { folder: "north", idle: "north", walk: "north" },
+  north_east: { folder: "north_east", idle: "northeast", walk: "northeast" },
+  east: { folder: "east", idle: "east", walk: "east" },
+  south_east: { folder: "south_east", idle: "southeast", walk: "southeast" },
+};
+
+function spritePath(direction: Direction, moving: boolean, frame: number) {
+  const meta = DIR_FILES[direction];
+  if (!moving) return `/player01/sprites/idle/${meta.folder}/player01_idle_${meta.idle}_01.png`;
+  return `/player01/sprites/walk/${meta.folder}/player01_walk_${meta.walk}_${String(frame).padStart(2, "0")}.png`;
+}
+
 function dirFromVector(dx: number, dy: number): Direction {
-  const a = Math.atan2(dy, dx) * 180 / Math.PI;
-  if (a >= -22.5 && a < 22.5) return "east";
-  if (a >= 22.5 && a < 67.5) return "south_east";
-  if (a >= 67.5 && a < 112.5) return "south";
-  if (a >= 112.5 && a < 157.5) return "south_west";
-  if (a >= 157.5 || a < -157.5) return "west";
-  if (a >= -157.5 && a < -112.5) return "north_west";
-  if (a >= -112.5 && a < -67.5) return "north";
+  const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+  if (angle >= -22.5 && angle < 22.5) return "east";
+  if (angle >= 22.5 && angle < 67.5) return "south_east";
+  if (angle >= 67.5 && angle < 112.5) return "south";
+  if (angle >= 112.5 && angle < 157.5) return "south_west";
+  if (angle >= 157.5 || angle < -157.5) return "west";
+  if (angle >= -157.5 && angle < -112.5) return "north_west";
+  if (angle >= -112.5 && angle < -67.5) return "north";
   return "north_east";
 }
 
@@ -42,69 +58,33 @@ function insideWorld(x: number, y: number) {
   const cy = 628;
   const rx = 618;
   const ry = 575;
-  const diamond = Math.abs((x - cx) / rx) + Math.abs((y - cy) / ry) <= 0.985;
-  if (!diamond) return false;
+  if (Math.abs((x - cx) / rx) + Math.abs((y - cy) / ry) > 0.985) return false;
 
-  // Main pond collision. This is an intentionally simple first-pass collision
-  // against the fixed artwork; we can replace it with a proper collision mask later.
   const pondCx = 627;
   const pondCy = 824;
   const pondRx = 170;
   const pondRy = 118;
   const px = (x - pondCx) / pondRx;
   const py = (y - pondCy) / pondRy;
-  if (px * px + py * py < 1) return false;
-
-  return true;
-}
-
-function spritePath(direction: Direction, frame = 1) {
-  if (frame === 1) return `/player01/sprites/idle/${direction}/player01_idle_${direction}_01.png`;
-  return `/player01/sprites/walk/${direction}/player01_walk_${direction}_${String(frame).padStart(2, "0")}.png`;
+  return px * px + py * py >= 1;
 }
 
 export default function NatureMapPlay() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const mapRef = useRef<HTMLImageElement>(null);
-  const spriteCache = useRef(new Map<string, HTMLImageElement>());
   const keysRef = useRef(new Set<string>());
-  const rafRef = useRef<number | null>(null);
+  const targetRef = useRef<Vec2 | null>(null);
   const lastRef = useRef<number | null>(null);
-  const walkClockRef = useRef(0);
+  const frameClockRef = useRef(0);
 
   const [position, setPosition] = useState<Vec2>(START);
   const [target, setTarget] = useState<Vec2 | null>(null);
-  const [moving, setMoving] = useState(false);
   const [direction, setDirection] = useState<Direction>("south");
+  const [moving, setMoving] = useState(false);
   const [frame, setFrame] = useState(1);
   const [mapReady, setMapReady] = useState(false);
 
-  const getSprite = useCallback((path: string) => {
-    let image = spriteCache.current.get(path);
-    if (!image) {
-      image = new Image();
-      image.decoding = "sync";
-      image.src = path;
-      spriteCache.current.set(path, image);
-    }
-    return image;
-  }, []);
-
-  const stop = useCallback(() => {
-    setMoving(false);
-    setTarget(null);
-    walkClockRef.current = 0;
-    setFrame(1);
-  }, []);
-
-  const tryMove = useCallback((current: Vec2, dx: number, dy: number, dt: number) => {
-    const length = Math.hypot(dx, dy) || 1;
-    const step = SPEED * dt;
-    const nx = current.x + (dx / length) * step;
-    const ny = current.y + (dy / length) * step;
-    if (!insideWorld(nx, ny)) return current;
-    return { x: nx, y: ny };
-  }, []);
+  useEffect(() => {
+    targetRef.current = target;
+  }, [target]);
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
@@ -113,7 +93,14 @@ export default function NatureMapPlay() {
         event.preventDefault();
         keysRef.current.add(key);
       }
-      if (key === "escape") stop();
+      if (key === "escape") {
+        keysRef.current.clear();
+        targetRef.current = null;
+        setTarget(null);
+        setMoving(false);
+        frameClockRef.current = 0;
+        setFrame(1);
+      }
     };
     const up = (event: KeyboardEvent) => keysRef.current.delete(event.key.toLowerCase());
     window.addEventListener("keydown", down);
@@ -122,12 +109,13 @@ export default function NatureMapPlay() {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
     };
-  }, [stop]);
+  }, []);
 
   useEffect(() => {
+    let raf = 0;
     const tick = (time: number) => {
-      const prev = lastRef.current ?? time;
-      const dt = Math.min(0.04, Math.max(0, (time - prev) / 1000));
+      const previous = lastRef.current ?? time;
+      const dt = Math.min(0.04, Math.max(0, (time - previous) / 1000));
       lastRef.current = time;
 
       const keys = keysRef.current;
@@ -138,80 +126,73 @@ export default function NatureMapPlay() {
       if (keys.has("a") || keys.has("arrowleft")) dx -= 1;
       if (keys.has("d") || keys.has("arrowright")) dx += 1;
 
+      let isMoving = false;
       if (dx || dy) {
-        const nextDir = dirFromVector(dx, dy);
-        setDirection(nextDir);
-        setPosition((current) => tryMove(current, dx, dy, dt));
+        isMoving = true;
         setTarget(null);
-        setMoving(true);
-      } else if (target) {
+        targetRef.current = null;
+        setDirection(dirFromVector(dx, dy));
         setPosition((current) => {
-          const vx = target.x - current.x;
-          const vy = target.y - current.y;
-          const dist = Math.hypot(vx, vy);
-          if (dist < 3) {
-            setMoving(false);
+          const length = Math.hypot(dx, dy) || 1;
+          const next = {
+            x: current.x + (dx / length) * SPEED * dt,
+            y: current.y + (dy / length) * SPEED * dt,
+          };
+          return insideWorld(next.x, next.y) ? next : current;
+        });
+      } else if (targetRef.current) {
+        const destination = targetRef.current;
+        setPosition((current) => {
+          const vx = destination.x - current.x;
+          const vy = destination.y - current.y;
+          const distance = Math.hypot(vx, vy);
+          if (distance < 3) {
+            targetRef.current = null;
             setTarget(null);
-            walkClockRef.current = 0;
-            setFrame(1);
-            return target;
+            return destination;
           }
-          const nextDir = dirFromVector(vx, vy);
-          setDirection(nextDir);
-          const next = tryMove(current, vx, vy, dt);
-          setMoving(true);
-          if (next.x === current.x && next.y === current.y) {
-            setMoving(false);
+          isMoving = true;
+          setDirection(dirFromVector(vx, vy));
+          const length = distance || 1;
+          const step = Math.min(distance, SPEED * dt);
+          const next = {
+            x: current.x + (vx / length) * step,
+            y: current.y + (vy / length) * step,
+          };
+          if (!insideWorld(next.x, next.y)) {
+            targetRef.current = null;
             setTarget(null);
-            walkClockRef.current = 0;
-            setFrame(1);
+            return current;
           }
           return next;
         });
+      }
+
+      setMoving(isMoving);
+      if (isMoving) {
+        frameClockRef.current += dt;
+        setFrame(1 + (Math.floor(frameClockRef.current * WALK_FPS) % 8));
       } else {
-        setMoving(false);
+        frameClockRef.current = 0;
+        setFrame(1);
       }
 
-      if (moving || dx || dy || target) {
-        walkClockRef.current += dt;
-        const nextFrame = 1 + (Math.floor(walkClockRef.current * WALK_FPS) % 8);
-        setFrame(nextFrame);
-      }
-
-      rafRef.current = requestAnimationFrame(tick);
+      raf = requestAnimationFrame(tick);
     };
 
-    rafRef.current = requestAnimationFrame(tick);
+    raf = requestAnimationFrame(tick);
     return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
+      cancelAnimationFrame(raf);
       lastRef.current = null;
     };
-  }, [moving, target, tryMove]);
+  }, []);
 
-  const positionPercent = useMemo(() => ({
-    left: `${(position.x / MAP_W) * 100}%`,
-    top: `${(position.y / MAP_H) * 100}%`,
-  }), [position]);
+  const spriteSrc = useMemo(() => spritePath(direction, moving, frame), [direction, moving, frame]);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, MAP_W, MAP_H);
-    ctx.imageSmoothingEnabled = false;
-
-    const path = moving ? spritePath(direction, frame) : spritePath(direction, 1);
-    const sprite = getSprite(path);
-    const draw = () => {
-      ctx.clearRect(0, 0, MAP_W, MAP_H);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(sprite, Math.round(position.x - PIVOT_X), Math.round(position.y - PIVOT_Y), SPRITE_W, SPRITE_H);
-    };
-    if (sprite.complete && sprite.naturalWidth > 0) draw();
-    else sprite.onload = draw;
-  }, [position, direction, frame, moving, getSprite]);
+  const positionPercent = useMemo(
+    () => ({ left: `${(position.x / MAP_W) * 100}%`, top: `${(position.y / MAP_H) * 100}%` }),
+    [position],
+  );
 
   const mapPoint = (event: React.PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -224,6 +205,7 @@ export default function NatureMapPlay() {
   const walkTo = (event: React.PointerEvent<HTMLDivElement>) => {
     const point = mapPoint(event);
     if (!insideWorld(point.x, point.y)) return;
+    targetRef.current = point;
     setTarget(point);
   };
 
@@ -240,15 +222,26 @@ export default function NatureMapPlay() {
 
         <section className="border-2 border-[#324159] bg-[#0b111c] p-2">
           <div className="relative mx-auto w-full max-w-[1254px] overflow-hidden" onPointerDown={walkTo}>
-            <img ref={mapRef} src={MAP_SRC} alt="PixelChat Nature World" className="block h-auto w-full select-none" draggable={false} onLoad={() => setMapReady(true)} />
-            <canvas ref={canvasRef} width={MAP_W} height={MAP_H} className="pointer-events-none absolute inset-0 h-full w-full" style={{ imageRendering: "pixelated" }} />
-            <div className="pointer-events-none absolute z-20" style={{ left: positionPercent.left, top: positionPercent.top }}>
-              <div style={{ width: 0, height: 0 }} aria-hidden="true" />
-            </div>
+            <img src={MAP_SRC} alt="PixelChat Nature World" className="block h-auto w-full select-none" draggable={false} onLoad={() => setMapReady(true)} />
+            <img
+              src={spriteSrc}
+              alt="Player 01"
+              draggable={false}
+              className="pointer-events-none absolute z-20"
+              style={{
+                left: positionPercent.left,
+                top: positionPercent.top,
+                width: SPRITE_W,
+                height: SPRITE_H,
+                maxWidth: "none",
+                transform: `translate(${-PIVOT_X}px, ${-PIVOT_Y}px)`,
+                imageRendering: "pixelated",
+              }}
+            />
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#324159] pt-3 text-[10px] text-[#9eb0c8]">
             <div>WASD / ARROWS = walk · CLICK = move to point · ESC = stop</div>
-            <div>{mapReady ? "MAP READY" : "LOADING MAP..."} · {moving ? `WALK ${frame}/8` : "IDLE"}</div>
+            <div>{mapReady ? "MAP READY" : "LOADING MAP..."} · {moving ? `WALK ${frame}/8` : "IDLE"} · {target ? "MOVING TO TARGET" : ""}</div>
           </div>
         </section>
       </div>
