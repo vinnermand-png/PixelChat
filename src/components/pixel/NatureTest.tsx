@@ -23,14 +23,14 @@ export default function NatureTest() {
   return (
     <main
       className="min-h-screen flex items-center justify-center bg-[#0b111c] p-4"
-      aria-label="Pixel Chat Nature Test v3.2"
+      aria-label="Pixel Chat Nature Test v3.2 Natural World Layout"
     >
       <div className="w-full max-w-[980px]">
         <div
           className="mb-3 border-2 border-[#a9df5a] bg-[#132019] px-3 py-2 text-[#d7f5a0]"
           style={{ fontFamily: '"Press Start 2P", "Courier New", monospace', fontSize: 10, lineHeight: 1.4 }}
         >
-          NATURE TEST v3.2 <span className="text-[#6ee7d8]">// ENVIRONMENT COMPOSITION</span>
+          NATURE TEST v3.2 <span className="text-[#6ee7d8]">// NATURAL WORLD LAYOUT</span>
         </div>
         <canvas
           ref={canvasRef}
