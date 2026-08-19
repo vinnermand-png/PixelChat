@@ -1,15 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import NatureTestLarge from "@/components/pixel/NatureTestLarge";
+import NatureEditor from "@/components/pixel/NatureEditor";
 
 export const Route = createFileRoute("/nature-test")({
   head: () => ({
     meta: [
-      { title: "Pixel Chat — Nature Test v4" },
+      { title: "Pixel Chat — Nature Editor v1" },
       {
         name: "description",
-        content: "Standalone Pixel Chat large nature world and terrain asset test scene.",
+        content: "Manual Pixel Chat nature world editor and asset placement test.",
       },
     ],
   }),
-  component: NatureTestLarge,
+  component: NatureEditor,
 });
