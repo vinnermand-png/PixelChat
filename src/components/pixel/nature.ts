@@ -1,5 +1,13 @@
-import { GRID, iso, TH, TW, VIEW_H, VIEW_W } from "./world";
+import { TH, TW } from "./world";
 import { NATURE_ASSETS, type NatureAssetKey } from "./naturePack";
+
+// Nature Test has its own larger presentation world so it can evolve without
+// changing the gameplay world's smaller Torvet grid.
+export const NATURE_VIEW_W = 640;
+export const NATURE_VIEW_H = 400;
+export const NATURE_GRID = 24;
+const NATURE_OX = NATURE_VIEW_W / 2;
+const NATURE_OY = 54;
 
 const N = {
   grassBase: "#4f9d2d",
@@ -17,6 +25,13 @@ function hash(x: number, y: number) {
   return n - Math.floor(n);
 }
 
+function iso(gx: number, gy: number) {
+  return {
+    x: NATURE_OX + (gx - gy) * (TW / 2),
+    y: NATURE_OY + (gx + gy) * (TH / 2),
+  };
+}
+
 function fillPixelPolygon(ctx: CanvasRenderingContext2D, points: Array<[number, number]>, color: string) {
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -28,9 +43,9 @@ function fillPixelPolygon(ctx: CanvasRenderingContext2D, points: Array<[number, 
 
 function platformBounds() {
   const a = iso(0, 0);
-  const b = iso(GRID - 1, 0);
-  const c = iso(GRID - 1, GRID - 1);
-  const d = iso(0, GRID - 1);
+  const b = iso(NATURE_GRID - 1, 0);
+  const c = iso(NATURE_GRID - 1, NATURE_GRID - 1);
+  const d = iso(0, NATURE_GRID - 1);
   return { a, b, c, d };
 }
 
@@ -38,20 +53,25 @@ function drawGrassBase(ctx: CanvasRenderingContext2D) {
   const { a, b, c, d } = platformBounds();
   fillPixelPolygon(
     ctx,
-    [[a.x, a.y], [b.x + TW / 2, b.y + TH / 2], [c.x, c.y + TH], [d.x - TW / 2, d.y + TH / 2]],
+    [
+      [a.x, a.y],
+      [b.x + TW / 2, b.y + TH / 2],
+      [c.x, c.y + TH],
+      [d.x - TW / 2, d.y + TH / 2],
+    ],
     N.grassBase,
   );
 }
 
 function drawGroundVariation(ctx: CanvasRenderingContext2D) {
   ctx.save();
-  for (let i = 0; i < 150; i++) {
-    const gx = hash(i * 1.7, 4.2) * (GRID - 1);
-    const gy = hash(i * 2.3, 9.1) * (GRID - 1);
+  for (let i = 320; i >= 0; i--) {
+    const gx = 0.25 + hash(i * 1.7, 4.2) * (NATURE_GRID - 1.5);
+    const gy = 0.25 + hash(i * 2.3, 9.1) * (NATURE_GRID - 1.5);
     const p = iso(gx, gy);
     const r = hash(i + 20, i + 91);
     ctx.fillStyle = r > 0.78 ? N.grassLight : r > 0.42 ? N.grassMid : N.grassDark;
-    ctx.globalAlpha = r > 0.78 ? 0.34 : 0.20;
+    ctx.globalAlpha = r > 0.78 ? 0.30 : 0.18;
     px(ctx, p.x + Math.round((r - 0.5) * 10), p.y + 5 + Math.round(hash(i + 33, i + 55) * 7), 1, 1);
   }
   ctx.restore();
@@ -86,57 +106,98 @@ type Placement = { key: NatureAssetKey; gx: number; gy: number; depth: number };
 const P = (key: NatureAssetKey, gx: number, gy: number): Placement => ({ key, gx, gy, depth: gx + gy });
 
 export function drawNatureTest(ctx: CanvasRenderingContext2D, _t = 0) {
-  ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+  ctx.clearRect(0, 0, NATURE_VIEW_W, NATURE_VIEW_H);
   ctx.fillStyle = "#0b111c";
-  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  ctx.fillRect(0, 0, NATURE_VIEW_W, NATURE_VIEW_H);
 
   drawGrassBase(ctx);
   drawGroundVariation(ctx);
 
   const placements: Placement[] = [
-    // FOREST EDGE
-    P("treeLarge01", 1.0, 4.8),
-    P("treeMedium02", 3.6, 1.8),
-    P("bush01", 0.8, 6.6),
-    P("bush03", 2.5, 5.8),
-    P("fern01", 1.6, 6.3),
-    P("log01", 1.5, 7.6),
-    P("rock02", 2.8, 6.0),
-    P("pebble01", 3.4, 5.4),
-    P("grassTuft01", 0.6, 7.8),
+    // NORTH-WEST FOREST EDGE: large anchors pushed outward to create depth.
+    P("treeLarge01", 2.0, 5.0),
+    P("treeMedium02", 6.0, 2.0),
+    P("treeSmall01", 1.3, 8.4),
+    P("bush01", 1.4, 7.2),
+    P("bush03", 3.7, 6.4),
+    P("fern01", 2.8, 7.2),
+    P("log01", 2.5, 9.0),
+    P("rock02", 4.4, 7.4),
+    P("pebble01", 5.2, 8.1),
+    P("fallenWoodCluster01", 4.0, 9.0),
 
-    // OPEN MEADOW
-    P("groundPatch01", 5.4, 7.2),
-    P("grassMicro01", 5.2, 5.4),
-    P("grassMicro02", 6.2, 6.0),
-    P("grassTuft02", 7.0, 5.8),
-    P("tinyFlower01", 6.6, 7.0),
-    P("wildFlower02", 7.8, 7.3),
-    P("mushroom01", 5.4, 8.0),
-    P("smallPlant02", 7.0, 8.3),
-    P("rock01", 8.0, 7.7),
-    P("pebble02", 8.5, 6.9),
+    // NORTH CENTER: breathing room + light meadow details.
+    P("treeLarge02", 11.6, 1.8),
+    P("bush02", 9.6, 4.0),
+    P("fern02", 10.0, 4.8),
+    P("wildFlower01", 8.4, 6.1),
+    P("wildFlower03", 12.7, 5.6),
+    P("grassTuft01", 9.0, 6.4),
+    P("grassMicro01", 10.3, 6.2),
+    P("tinyFlower01", 11.8, 7.0),
 
-    // POND AREA
-    P("waterPiece01", 10.8, 3.8),
-    P("waterPiece02", 11.7, 4.8),
-    P("pondEdgeCluster01", 9.8, 4.2),
-    P("shorelineDetail01", 10.0, 5.5),
-    P("shorelineDetail02", 12.1, 5.8),
-    P("reed01", 9.5, 3.8),
-    P("waterPlant01", 12.4, 4.1),
-    P("rockCluster01", 13.0, 5.2),
-    P("tinyFlower02", 12.5, 6.5),
+    // CENTRAL MEADOW: intentionally sparse enough for future player movement.
+    P("groundPatch01", 8.0, 9.2),
+    P("groundPatch02", 11.1, 9.6),
+    P("groundDetail01", 7.1, 10.4),
+    P("groundDetail02", 12.4, 10.8),
+    P("grassTuft02", 8.8, 11.0),
+    P("grassMicro02", 10.2, 10.6),
+    P("tinyFlower02", 11.4, 11.6),
+    P("mushroom01", 7.1, 11.8),
+    P("smallPlant02", 13.0, 9.3),
+    P("rock01", 13.8, 11.0),
+    P("pebble02", 14.4, 9.9),
 
-    // SECONDARY NATURE POCKET
-    P("bush02", 10.2, 7.1),
-    P("treeSmall01", 12.4, 7.4),
-    P("fern02", 11.1, 7.4),
-    P("mushroomCluster01", 9.0, 8.0),
-    P("fallenWoodCluster01", 10.8, 8.1),
-    P("rockCluster02", 12.2, 8.0),
+    // EAST POND: compact landmark with a clear meadow buffer around it.
+    P("waterPiece01", 17.3, 4.8),
+    P("waterPiece02", 18.5, 5.7),
+    P("pondEdgeCluster01", 16.1, 5.0),
+    P("shorelineDetail01", 16.2, 6.4),
+    P("shorelineDetail02", 19.6, 6.7),
+    P("reed01", 15.8, 4.3),
+    P("waterPlant01", 19.8, 5.0),
+    P("rockCluster01", 20.3, 6.0),
+    P("bush03", 20.0, 7.8),
+    P("tinyFlower02", 18.9, 8.1),
+
+    // SOUTH-EAST FOREST POCKET.
+    P("treeSmall02", 19.4, 11.6),
+    P("treeMedium01", 21.2, 9.6),
+    P("bush01", 18.7, 10.2),
+    P("fern02", 19.6, 9.2),
+    P("mushroomCluster01", 16.0, 11.8),
+    P("fallenWoodCluster01", 17.7, 12.6),
+    P("rockCluster02", 20.8, 12.2),
+    P("branch02", 15.2, 13.0),
+
+    // SOUTH-WEST LOW-DENSITY EDGE.
+    P("treeSmall02", 4.0, 16.8),
+    P("bush02", 5.8, 15.6),
+    P("smallPlant01", 7.4, 15.1),
+    P("wildFlower02", 8.2, 16.3),
+    P("grassTuft01", 9.4, 15.7),
+    P("rock03", 6.8, 17.2),
+    P("branch01", 8.4, 17.8),
   ];
 
   placements.sort((a, b) => a.depth - b.depth);
   placements.forEach((p) => drawAsset(ctx, p.key, p.gx, p.gy));
+
+  // The micro-grass layer is intentionally dense but subtle. It makes the enlarged
+  // platform read as a meadow rather than an empty green canvas.
+  const skip = (gx: number, gy: number) => {
+    // Keep a broad central movement corridor and the pond itself readable.
+    if (gx > 6 && gx < 16 && gy > 7 && gy < 14) return true;
+    if (gx > 15 && gx < 21 && gy > 3 && gy < 9) return true;
+    return false;
+  };
+
+  for (let i = 0; i < 110; i++) {
+    const gx = 0.8 + hash(i * 2.1, 13.4) * 21.3;
+    const gy = 0.8 + hash(i * 1.4, 18.2) * 21.0;
+    if (skip(gx, gy)) continue;
+    const variants: NatureAssetKey[] = ["grassMicro01", "grassMicro02", "groundDetail01", "groundDetail02"];
+    drawAsset(ctx, variants[i % variants.length]!, gx, gy);
+  }
 }
