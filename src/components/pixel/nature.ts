@@ -202,57 +202,28 @@ export function drawNatureTest(ctx: CanvasRenderingContext2D, _t = 0) {
   drawGrassBase(ctx);
   drawGroundVariation(ctx);
 
-  // Nature Test v3.1: layered composition with generous breathing room.
-  // Large trees are the visual anchors; mid-scale groups support them; micro-details stay sparse.
+  // Nature Test v3.2: forest cluster → open grass zone → water landmark → smaller nature cluster.
+  // The middle remains deliberately clear for future player movement.
   const placements: Placement[] = [
-    // HERO TREES — only two, widely separated
-    P("tree3", 2.7, 2.5),
-    P("tree2", 9.8, 3.4),
+    // FOREST CLUSTER — three large anchors with restrained undergrowth.
+    P("tree3", 1.8, 2.2),
+    P("tree2", 3.1, 1.5),
+    P("tree4", 2.8, 3.5),
+    P("bush1", 1.3, 4.0),
+    P("bush3", 3.9, 4.2),
+    P("plant2", 2.2, 4.6),
+    P("log1", 3.7, 3.8),
+    P("rock2", 1.9, 4.9),
+    P("rock4", 2.6, 5.2),
 
-    // MEDIUM GROUP A — support under the left hero tree
-    P("bush1", 2.4, 4.6),
-    P("bush3", 4.0, 4.8),
-    P("rock2", 3.3, 5.5),
-    P("log1", 4.8, 5.4),
+    // WATER LANDMARK — one small, intentional destination beyond the open grass.
+    P("water2", 9.2, 5.1),
 
-    // MEDIUM GROUP B — support under the right hero tree
-    P("bush2", 9.0, 5.0),
-    P("bush4", 10.8, 5.5),
-    P("rock4", 10.2, 6.3),
-    P("log3", 8.6, 6.0),
-
-    // SMALL NATURAL POCKET — lower-left
-    P("bush1", 3.4, 8.6),
-    P("rock1", 2.8, 8.8),
-    P("ground1", 4.2, 9.1),
-
-    // SMALL NATURAL POCKET — lower-right
-    P("bush3", 8.8, 9.0),
-    P("rock3", 9.9, 8.7),
-    P("ground3", 8.4, 9.8),
-
-    // Sparse plant accents — not repeated in rows
-    P("plant2", 6.2, 3.0),
-    P("plant4", 10.8, 8.8),
-    P("plant1", 3.8, 10.2),
-
-    // Sparse flowers and grass — tiny accents only
-    P("flower2", 5.8, 4.4),
-    P("flower4", 7.8, 8.7),
-    P("grass1", 5.0, 7.3),
-    P("grass3", 7.1, 5.8),
-    P("grass4", 9.0, 10.1),
-
-    // Mushrooms — one small pair, away from the hero silhouettes
-    P("mushroom1", 5.8, 10.3),
-    P("mushroom4", 7.4, 10.7),
-
-    // Ground decoration — very restrained
-    P("ground2", 6.8, 6.9),
-    P("ground4", 10.7, 10.6),
-
-    // A couple of tiny water/terrain accents so the library remains represented without becoming a showroom
-    P("water1", 11.1, 10.9),
+    // SMALLER NATURE CLUSTER — a quiet counterweight at the far edge.
+    P("tree1", 10.6, 8.9),
+    P("bush4", 11.4, 9.8),
+    P("rock1", 9.9, 10.2),
+    P("rock3", 10.6, 10.6),
   ];
 
   placements.sort((a, b) => a.depth - b.depth);
