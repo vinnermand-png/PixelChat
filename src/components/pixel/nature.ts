@@ -202,28 +202,27 @@ export function drawNatureTest(ctx: CanvasRenderingContext2D, _t = 0) {
   drawGrassBase(ctx);
   drawGroundVariation(ctx);
 
-  // Nature Test v3.2: forest cluster → open grass zone → water landmark → smaller nature cluster.
-  // The middle remains deliberately clear for future player movement.
+  // Nature Test v3.2: natural density, clear movement space, and a layered focal cluster.
   const placements: Placement[] = [
-    // FOREST CLUSTER — three large anchors with restrained undergrowth.
-    P("tree3", 1.8, 2.2),
-    P("tree2", 3.1, 1.5),
-    P("tree4", 2.8, 3.5),
-    P("bush1", 1.3, 4.0),
-    P("bush3", 3.9, 4.2),
-    P("plant2", 2.2, 4.6),
-    P("log1", 3.7, 3.8),
-    P("rock2", 1.9, 4.9),
-    P("rock4", 2.6, 5.2),
+    // TOP AREA — a light introduction with one tree and quiet support.
+    P("tree2", 3.4, 1.3),
+    P("bush2", 2.3, 2.9),
 
-    // WATER LANDMARK — one small, intentional destination beyond the open grass.
-    P("water2", 9.2, 5.1),
+    // CENTER AREA — the one dense, layered forest pocket.
+    P("tree3", 5.1, 4.3),
+    P("tree4", 7.2, 4.0),
+    P("bush1", 4.6, 5.8),
+    P("bush3", 7.8, 5.4),
+    P("rock2", 5.6, 6.5),
+    P("rock4", 7.0, 6.8),
+    P("plant3", 6.5, 5.6),
+    P("flower2", 5.3, 7.2),
+    P("grass3", 7.9, 6.6),
+    P("ground3", 6.4, 7.4),
 
-    // SMALLER NATURE CLUSTER — a quiet counterweight at the far edge.
-    P("tree1", 10.6, 8.9),
-    P("bush4", 11.4, 9.8),
-    P("rock1", 9.9, 10.2),
-    P("rock3", 10.6, 10.6),
+    // LOWER AREA — a sparse secondary landmark that leaves room to walk.
+    P("log2", 6.1, 10.3),
+    P("grass1", 4.9, 11.3),
   ];
 
   placements.sort((a, b) => a.depth - b.depth);
