@@ -86,22 +86,36 @@ function drawOrganicPatch(ctx: CanvasRenderingContext2D, gx: number, gy: number,
 
 function drawGroundVariation(ctx: CanvasRenderingContext2D) {
   ctx.save();
-  // Large irregular patches deliberately overlap / ignore the underlying iso coordinate grid.
-  [
-    [2.7, 3.3, 31, 10, N.grassDark, 11],
-    [7.5, 5.4, 30, 11, N.grassLight, 22],
-    [9.9, 9.4, 26, 9, N.grassDark, 37],
-    [4.0, 9.0, 25, 9, N.grassLight, 48],
-  ].forEach(([gx, gy, rx, ry, c, seed]) => drawOrganicPatch(ctx, gx as number, gy as number, rx as number, ry as number, c as string, seed as number));
 
-  for (let i = 0; i < 80; i++) {
+  // Keep terrain variation subtle and connected to the environment at the edges.
+  // The middle stays calm so it reads as usable movement space rather than a patchwork surface.
+  const terrainZones: Array<[number, number, number, number, string, number, number]> = [
+    [1.8, 6.3, 45, 15, N.grassDark, 11, 0.22],
+    [4.2, 1.9, 37, 12, N.grassMid, 22, 0.18],
+    [11.0, 6.6, 39, 14, N.grassDark, 37, 0.18],
+  ];
+
+  for (const [gx, gy, rx, ry, color, seed, alpha] of terrainZones) {
+    ctx.globalAlpha = alpha;
+    drawOrganicPatch(ctx, gx, gy, rx, ry, color, seed);
+  }
+  ctx.globalAlpha = 1;
+
+  // A few single-pixel shifts keep the grass alive without turning open ground into decoration.
+  for (let i = 0; i < 48; i++) {
     const gx = 0.6 + hash(i * 1.71, 2.1) * (GRID - 1.2);
     const gy = 0.8 + hash(i * 2.17, 8.4) * (GRID - 1.4);
+
+    // Preserve the central clearing for readable future movement.
+    if (Math.abs(gx - 6.5) < 2.5 && Math.abs(gy - 6.5) < 2.2) continue;
+
     const p = iso(gx, gy);
     const r = hash(i + 71, i + 12);
-    ctx.fillStyle = r > 0.82 ? N.grassLight : N.grassDeep;
-    px(ctx, p.x + Math.round((r - 0.5) * 11), p.y + 5 + Math.round(hash(i + 55, i + 90) * 7), r > 0.92 ? 2 : 1, 1);
+    ctx.fillStyle = r > 0.78 ? N.grassMid : N.grassDark;
+    ctx.globalAlpha = r > 0.78 ? 0.35 : 0.25;
+    px(ctx, p.x + Math.round((r - 0.5) * 8), p.y + 5 + Math.round(hash(i + 55, i + 90) * 6), 1, 1);
   }
+
   ctx.restore();
 }
 
