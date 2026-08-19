@@ -7,7 +7,8 @@ const SPRITE_W = 48;
 const SPRITE_H = 64;
 const PIVOT_X = 24;
 const PIVOT_Y = 62;
-const WALK_FPS = 10;
+const WALK_FPS = 8;
+const WALK_FRAMES = 4;
 const SPEED = 150;
 
 type Direction =
@@ -171,7 +172,7 @@ export default function NatureMapPlay() {
       setMoving(isMoving);
       if (isMoving) {
         frameClockRef.current += dt;
-        setFrame(1 + (Math.floor(frameClockRef.current * WALK_FPS) % 8));
+        setFrame(1 + (Math.floor(frameClockRef.current * WALK_FPS) % WALK_FRAMES));
       } else {
         frameClockRef.current = 0;
         setFrame(1);
@@ -215,7 +216,7 @@ export default function NatureMapPlay() {
         <header className="mb-3 flex flex-wrap items-center justify-between gap-3 border-2 border-[#a9df5a] bg-[#132019] px-3 py-2">
           <div>
             <div className="text-sm font-bold">PIXELCHAT NATURE WORLD // PLAYER TEST</div>
-            <div className="text-xs text-[#6ee7d8]">PLAYER 01 // 48×64 // 8-DIRECTION WALK</div>
+            <div className="text-xs text-[#6ee7d8]">PLAYER 01 // 48×64 // 8-DIRECTION WALK // 4-FRAME CYCLE</div>
           </div>
           <button onClick={() => { window.location.href = "/nature-test"; }} className="border-2 border-[#324159] bg-[#d7f5a0] px-3 py-2 text-xs text-[#0b111c]">EDIT MAP</button>
         </header>
@@ -241,7 +242,7 @@ export default function NatureMapPlay() {
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#324159] pt-3 text-[10px] text-[#9eb0c8]">
             <div>WASD / ARROWS = walk · CLICK = move to point · ESC = stop</div>
-            <div>{mapReady ? "MAP READY" : "LOADING MAP..."} · {moving ? `WALK ${frame}/8` : "IDLE"} · {target ? "MOVING TO TARGET" : ""}</div>
+            <div>{mapReady ? "MAP READY" : "LOADING MAP..."} · {moving ? `WALK ${frame}/4` : "IDLE"} · {target ? "MOVING TO TARGET" : ""}</div>
           </div>
         </section>
       </div>
