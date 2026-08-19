@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import PixelChat from "@/components/pixel/PixelChat";
-import NatureTest from "@/components/pixel/NatureTest";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -25,11 +24,6 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
-  const isNatureTest = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("nature-test");
-  return isNatureTest ? <NatureTest /> : <MainIndex />;
-}
-
-function MainIndex() {
   const [username, setUsername] = useState("Player_01");
   const [editing, setEditing] = useState(false);
   const [temp, setTemp] = useState(username);
