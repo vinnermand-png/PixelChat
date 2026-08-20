@@ -9,11 +9,11 @@ export const ASSET_LIBRARY: readonly AssetDefinition[] = [
     name: "Test Tree",
     category: "nature",
     sprite: {
-      src: TEST_TREE_PNG,
-      width: 32,
-      height: 48,
-      anchorX: 0.5,
-      anchorY: 1
+      src: TEST_TREE_PNG
+    },
+    render: {
+      bounds: { width: 32, height: 48 },
+      anchor: { x: 0.5, y: 1 }
     },
     collision: {
       enabled: true,
