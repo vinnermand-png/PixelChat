@@ -26,10 +26,7 @@ function readApiKey(): string | undefined {
 async function generateAsset(request: Request): Promise<Response> {
   const apiKey = readApiKey();
   if (!apiKey) {
-    return Response.json(
-      { error: "OPENAI_API_KEY mangler. Tjek .env.local og genstart npm run dev." },
-      { status: 500 },
-    );
+    return Response.json({ error: "OPENAI_API_KEY mangler. Tjek .env.local og genstart npm run dev." }, { status: 500 });
   }
 
   const body = await request.json() as { prompt?: unknown; kind?: unknown };
@@ -41,26 +38,17 @@ async function generateAsset(request: Request): Promise<Response> {
 
 STRICT OBJECT CONTRACT: crisp low-resolution pixel art, transparent background, no text, no UI, no scene, no floor, no shadow outside the object, no anti-aliasing, no blur, centered composition, readable silhouette, game-ready PNG, consistent simple colorful PixelChat visual style. The object must be isolated and must not contain terrain or other objects.`;
 
-  const foundationPrompt = `Create EXACTLY ONE game-ready PixelChat foundation tile for a locked isometric grid. ${userPrompt}
+  const foundationPrompt = `Create a FULL-BLEED PixelChat terrain texture for one isometric foundation tile. ${userPrompt}
 
-ABSOLUTE FOUNDATION CONTRACT:
-- The asset represents ONE AND ONLY ONE 2:1 isometric diamond tile.
-- The game engine grid is EXACTLY 32 pixels wide × 16 pixels high. The output may be generated larger, but it will be normalized by the editor to EXACTLY 32 × 16 pixels with nearest-neighbour pixel scaling only.
-- Design the visual composition so the final normalized result fits this exact 32 × 16 diamond contract.
-- The diamond must align exactly with the four neighbouring 32 × 16 isometric diamonds when repeated.
-- The four edge boundaries must connect seamlessly to adjacent copies of the SAME tile.
-- Transparent background outside the single diamond.
-- The terrain surface must fill the diamond all the way to its four corner boundaries.
-- No padding inside the canvas around the intended diamond.
-- No white border, no white pixels on the edge, no outline, no frame, no grid lines, no seams, no gaps.
-- No cast shadow outside the diamond.
-- No second tile, no repeated tile pattern, no tile sheet, no large map, no scene.
-- No perspective floor beyond the single diamond.
-- No text, no UI, no characters, no trees, no rocks, no buildings, no props, no separate objects unless explicitly part of the requested ground texture.
-- Crisp low-resolution pixel art only: hard pixels, nearest-neighbour look, no anti-aliasing, no blur.
-- Keep colour variation subtle and readable so repeated tiles look natural without visible repetition.
+CRITICAL RENDER PIPELINE: PixelChat will automatically crop this generated image into the exact 32 × 16 isometric diamond. Therefore DO NOT draw an isometric diamond yourself. DO NOT draw a tile shape, border, outline, frame, white edge, black edge, grid line, seam, padding, margin, empty background, or any space around the terrain.
 
-IMPORTANT: Generate the visual design for ONE EXACT 32 × 16 ISOMETRIC FOUNDATION TILE. The PixelChat engine, not the AI, will repeat and place this tile across the world.`;
+MANDATORY: The requested terrain texture must cover the ENTIRE 1024 × 1024 image from edge to edge. Full bleed. No transparent background. No separate object silhouette. No diamond shape. No single tile shown inside a larger canvas.
+
+Generate only a seamless-looking pixel-art ground SURFACE texture. The result must look like continuous grass/dirt/stone/water/sand/snow/moss or the requested foundation material spread across the full image. Use subtle readable pixel variation so repeated tiles connect naturally.
+
+No objects, characters, trees, rocks, buildings, props, UI, text, scene composition, cast shadows, or isolated tile shapes. Crisp hard pixel edges only. No anti-aliasing. No blur. Match the simple colorful PixelChat visual style.
+
+IMPORTANT: AI GENERATES THE TEXTURE ONLY. PIXELCHAT GENERATES THE EXACT 32 × 16 ISOMETRIC DIAMOND SHAPE.`;
 
   const prompt = kind === "foundation" ? foundationPrompt : objectPrompt;
 
@@ -74,7 +62,7 @@ IMPORTANT: Generate the visual design for ONE EXACT 32 × 16 ISOMETRIC FOUNDATIO
       model: "gpt-image-1",
       prompt,
       size: "1024x1024",
-      background: "transparent",
+      background: kind === "foundation" ? "opaque" : "transparent",
       output_format: "png",
       quality: "low",
     }),
@@ -86,10 +74,7 @@ IMPORTANT: Generate the visual design for ONE EXACT 32 × 16 ISOMETRIC FOUNDATIO
   };
 
   if (!openaiResponse.ok) {
-    return Response.json(
-      { error: payload.error?.message ?? "OpenAI image generation failed." },
-      { status: openaiResponse.status },
-    );
+    return Response.json({ error: payload.error?.message ?? "OpenAI image generation failed." }, { status: openaiResponse.status });
   }
 
   const imageBase64 = payload.data?.[0]?.b64_json;
@@ -107,10 +92,7 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   if (!isH3SwallowedErrorBody(body)) return response;
 
   console.error(consumeLastCapturedError() ?? new Error(`h3 swallowed SSR error: ${body}`));
-  return new Response(renderErrorPage(), {
-    status: 500,
-    headers: { "content-type": "text/html; charset=utf-8" },
-  });
+  return new Response(renderErrorPage(), { status: 500, headers: { "content-type": "text/html; charset=utf-8" } });
 }
 
 function isH3SwallowedErrorBody(body: string): boolean {
@@ -126,19 +108,14 @@ export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
       const url = new URL(request.url);
-      if (url.pathname === "/api/generate-asset" && request.method === "POST") {
-        return await generateAsset(request);
-      }
+      if (url.pathname === "/api/generate-asset" && request.method === "POST") return await generateAsset(request);
 
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
     } catch (error) {
       console.error(error);
-      return new Response(renderErrorPage(), {
-        status: 500,
-        headers: { "content-type": "text/html; charset=utf-8" },
-      });
+      return new Response(renderErrorPage(), { status: 500, headers: { "content-type": "text/html; charset=utf-8" } });
     }
   },
 };
