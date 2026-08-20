@@ -1,4 +1,4 @@
-import type { AssetDefinition, AssetId } from "./types";
+import type { AssetDefinition, AssetId, AssetCategory } from "./types";
 
 const PIXELCHAT_ASSET_ROOT = "/assets/pixelchat";
 const TEST_TREE_PNG = `${PIXELCHAT_ASSET_ROOT}/nature/trees/tree-01.png`;
@@ -7,7 +7,7 @@ export const ASSET_LIBRARY: readonly AssetDefinition[] = [
   {
     id: "testTree",
     name: "Test Tree",
-    category: "nature",
+    category: "trees",
     sprite: {
       src: TEST_TREE_PNG
     },
@@ -23,7 +23,7 @@ export const ASSET_LIBRARY: readonly AssetDefinition[] = [
   {
     id: "testLargeTree",
     name: "Test Large Tree",
-    category: "nature",
+    category: "trees",
     collision: {
       enabled: true,
       footprint: [
@@ -42,6 +42,6 @@ export function getAsset(id: AssetId) {
   return ASSET_LIBRARY.find((asset) => asset.id === id);
 }
 
-export function getAssetsByCategory(category: AssetDefinition["category"]) {
+export function getAssetsByCategory(category: AssetCategory) {
   return ASSET_LIBRARY.filter((asset) => asset.category === category);
 }
