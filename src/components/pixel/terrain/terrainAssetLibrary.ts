@@ -2,21 +2,19 @@ import type { TerrainVisualState } from "./terrainNeighbors";
 
 export type TerrainAssetId = "grass" | "dirt" | "snow" | "sand" | "stone";
 
-type TerrainVisualSprite = {
+export type TerrainVisualSprite = {
   src: string;
 };
 
-type TerrainVisualThumbnail = {
+export type TerrainVisualThumbnail = {
   src: string;
 };
 
 export type TerrainVisualStateDefinition = {
   sprite?: TerrainVisualSprite;
-  thumbnail?: TerrainVisualThumbnail;
-  fallbackColor?: string;
 };
 
-type TerrainVisual = {
+export type TerrainVisual = {
   topColor: string;
   /**
    * Temporary runtime compatibility with the existing STEP 25 GameMaker renderer.
@@ -57,6 +55,8 @@ function createTerrainVisual(topColor: string): TerrainVisual {
   return {
     topColor,
     surfaceColor: topColor,
+    sprite: undefined,
+    thumbnail: undefined,
     states: { ...TERRAIN_VISUAL_STATES },
   };
 }
@@ -101,6 +101,8 @@ export const TERRAIN_LIBRARY: TerrainAssetDefinition[] = [
 
 export type ResolvedTerrainVisualDefinition = TerrainVisualStateDefinition & {
   fallbackColor: string;
+  sprite?: TerrainVisualSprite;
+  thumbnail?: TerrainVisualThumbnail;
 };
 
 /**
@@ -119,9 +121,9 @@ export function getTerrainVisualDefinition(
   const stateVisual = terrain.visual.states[visualState];
 
   return {
-    fallbackColor: stateVisual.fallbackColor ?? terrain.visual.topColor,
+    fallbackColor: terrain.visual.topColor,
     sprite: stateVisual.sprite ?? terrain.visual.sprite,
-    thumbnail: stateVisual.thumbnail ?? terrain.visual.thumbnail,
+    thumbnail: terrain.visual.thumbnail,
   };
 }
 
