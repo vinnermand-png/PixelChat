@@ -36,7 +36,8 @@ export default function GameFoundationInspector({
         (version) => version.id === foundation.activeVersionId,
       )
     : undefined;
-  const latestDna = foundation.dnaVersions.at(-1);
+  const latestDna =
+    foundation.dnaVersions[foundation.dnaVersions.length - 1];
   const readinessEntries = [
     foundation.readiness.blueprint !== undefined
       ? `Blueprint: ${foundation.readiness.blueprint}`
