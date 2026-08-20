@@ -41,9 +41,26 @@ async function generateAsset(request: Request): Promise<Response> {
 
 STRICT OBJECT CONTRACT: crisp low-resolution pixel art, transparent background, no text, no UI, no scene, no floor, no shadow outside the object, no anti-aliasing, no blur, centered composition, readable silhouette, game-ready PNG, consistent simple colorful PixelChat visual style. The object must be isolated and must not contain terrain or other objects.`;
 
-  const foundationPrompt = `Create exactly one PixelChat foundation terrain tile. ${userPrompt}
+  const foundationPrompt = `Create EXACTLY ONE game-ready PixelChat foundation tile for a locked isometric grid. ${userPrompt}
 
-STRICT FOUNDATION CONTRACT: the final asset represents one isometric ground diamond only, designed for a locked 32 × 16 pixel isometric tile contract. Crisp low-resolution pixel art, hard pixel edges, no anti-aliasing, no blur, no text, no UI, no characters, no trees, no rocks, no buildings, no props, no separate objects, no scene. Show only the ground surface filling the tile shape. Use subtle readable texture and restrained color variation. Keep the surface visually clean and repeat-friendly so many copies can be painted beside each other in a game world. Match the existing simple colorful PixelChat visual style. Do not add a cast shadow outside the tile.`;
+ABSOLUTE FOUNDATION CONTRACT:
+- The asset represents ONE AND ONLY ONE 2:1 isometric diamond tile.
+- The game engine grid is EXACTLY 32 pixels wide × 16 pixels high. The output may be generated larger, but it will be normalized by the editor to EXACTLY 32 × 16 pixels with nearest-neighbour pixel scaling only.
+- Design the visual composition so the final normalized result fits this exact 32 × 16 diamond contract.
+- The diamond must align exactly with the four neighbouring 32 × 16 isometric diamonds when repeated.
+- The four edge boundaries must connect seamlessly to adjacent copies of the SAME tile.
+- Transparent background outside the single diamond.
+- The terrain surface must fill the diamond all the way to its four corner boundaries.
+- No padding inside the canvas around the intended diamond.
+- No white border, no white pixels on the edge, no outline, no frame, no grid lines, no seams, no gaps.
+- No cast shadow outside the diamond.
+- No second tile, no repeated tile pattern, no tile sheet, no large map, no scene.
+- No perspective floor beyond the single diamond.
+- No text, no UI, no characters, no trees, no rocks, no buildings, no props, no separate objects unless explicitly part of the requested ground texture.
+- Crisp low-resolution pixel art only: hard pixels, nearest-neighbour look, no anti-aliasing, no blur.
+- Keep colour variation subtle and readable so repeated tiles look natural without visible repetition.
+
+IMPORTANT: Generate the visual design for ONE EXACT 32 × 16 ISOMETRIC FOUNDATION TILE. The PixelChat engine, not the AI, will repeat and place this tile across the world.`;
 
   const prompt = kind === "foundation" ? foundationPrompt : objectPrompt;
 
@@ -57,7 +74,7 @@ STRICT FOUNDATION CONTRACT: the final asset represents one isometric ground diam
       model: "gpt-image-1",
       prompt,
       size: "1024x1024",
-      background: kind === "foundation" ? "opaque" : "transparent",
+      background: "transparent",
       output_format: "png",
       quality: "low",
     }),
