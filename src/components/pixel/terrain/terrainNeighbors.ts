@@ -15,14 +15,16 @@ export type TerrainSameTypeNeighbors = {
 };
 
 export type TerrainVisualState =
-  | "center"
   | "isolated"
+  | "center"
   | "north-edge"
   | "south-edge"
   | "east-edge"
   | "west-edge"
-  | "corner"
-  | "edge";
+  | "north-west-corner"
+  | "north-east-corner"
+  | "south-west-corner"
+  | "south-east-corner";
 
 export type TerrainVisualStateResult = TerrainSameTypeNeighbors & {
   terrainId: TerrainAssetId | undefined;
@@ -71,29 +73,40 @@ export function getTerrainVisualState(
   const sameTypeNeighbors = getTerrainSameTypeNeighbors(terrain, gx, gy);
   const { northSame, southSame, eastSame, westSame } = sameTypeNeighbors;
 
-  const sameCount = [northSame, southSame, eastSame, westSame].filter(Boolean).length;
-
   let state: TerrainVisualState;
 
-  if (sameCount === 4) {
+  if (northSame && southSame && eastSame && westSame) {
     state = "center";
-  } else if (sameCount === 0) {
+  } else if (!northSame && !southSame && !eastSame && !westSame) {
     state = "isolated";
-  } else if (sameCount === 3) {
-    if (!northSame) state = "north-edge";
-    else if (!southSame) state = "south-edge";
-    else if (!eastSame) state = "east-edge";
-    else state = "west-edge";
-  } else if (
-    sameCount === 2 &&
-    ((northSame && eastSame) ||
-      (eastSame && southSame) ||
-      (southSame && westSame) ||
-      (westSame && northSame))
-  ) {
-    state = "corner";
+  } else if (!northSame && !southSame && eastSame && westSame) {
+    state = "north-edge";
+  } else if (northSame && southSame && !eastSame && !westSame) {
+    state = "east-edge";
+  } else if (!northSame && southSame && eastSame && westSame) {
+    state = "north-edge";
+  } else if (northSame && !southSame && eastSame && westSame) {
+    state = "south-edge";
+  } else if (northSame && southSame && !eastSame && westSame) {
+    state = "east-edge";
+  } else if (northSame && southSame && eastSame && !westSame) {
+    state = "west-edge";
+  } else if (northSame && !southSame && eastSame && !westSame) {
+    state = "south-west-corner";
+  } else if (northSame && !southSame && !eastSame && westSame) {
+    state = "south-east-corner";
+  } else if (!northSame && southSame && eastSame && !westSame) {
+    state = "north-west-corner";
+  } else if (!northSame && southSame && !eastSame && westSame) {
+    state = "north-east-corner";
+  } else if (!northSame) {
+    state = "north-edge";
+  } else if (!southSame) {
+    state = "south-edge";
+  } else if (!eastSame) {
+    state = "east-edge";
   } else {
-    state = "edge";
+    state = "west-edge";
   }
 
   return {
