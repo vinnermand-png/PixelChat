@@ -1,5 +1,12 @@
 export type TerrainAssetId = "grass" | "dirt" | "snow" | "sand" | "stone";
 
+export type TerrainVisual = {
+  surfaceColor: string;
+  topColor?: string;
+  sprite?: { src: string };
+  thumbnail?: { src: string };
+};
+
 export type TerrainAssetDefinition = {
   id: TerrainAssetId;
   name: string;
@@ -7,20 +14,7 @@ export type TerrainAssetDefinition = {
   thumbnail: {
     color: string;
   };
-  visual: {
-    /** Current STEP 25 renderer fallback. */
-    surfaceColor: string;
-    /** Optional future semantic terrain top color. */
-    topColor?: string;
-    /** Optional future PNG/sprite source. */
-    sprite?: {
-      src: string;
-    };
-    /** Optional future thumbnail source. */
-    thumbnail?: {
-      src: string;
-    };
-  };
+  visual: TerrainVisual;
 };
 
 export const TERRAIN_LIBRARY: TerrainAssetDefinition[] = [
