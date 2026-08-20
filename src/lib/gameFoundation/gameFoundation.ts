@@ -76,6 +76,16 @@ export interface CreateGameDnaVersionInput extends GameDnaContent {
   updatedAt?: string;
 }
 
+const FOUNDATION_STATUS_TRANSITIONS: Record<
+  GameFoundationStatus,
+  readonly GameFoundationStatus[]
+> = {
+  discovery: ["draft"],
+  draft: ["review"],
+  review: ["draft", "active"],
+  active: ["draft", "review", "active"],
+};
+
 function normalizeDnaVersions(
   dnaVersions: GameDnaVersion[],
   activeVersionId?: string,
@@ -105,6 +115,19 @@ function normalizeDnaVersions(
   };
 }
 
+function withFoundationUpdatedAt(
+  foundation: GameFoundation,
+  updatedAt: string,
+): GameFoundation {
+  return {
+    ...foundation,
+    game: {
+      ...foundation.game,
+      updatedAt,
+    },
+  };
+}
+
 export function createGameFoundation(
   input: CreateGameFoundationInput,
 ): GameFoundation {
@@ -112,6 +135,14 @@ export function createGameFoundation(
     input.dnaVersions ?? [],
     input.activeVersionId,
   );
+
+  const status = input.status ?? "discovery";
+
+  if (status === "active" && !normalizedDna.activeVersionId) {
+    throw new Error(
+      "An active Game Foundation requires exactly one active Game DNA version.",
+    );
+  }
 
   return {
     game: { ...input.game },
@@ -122,7 +153,7 @@ export function createGameFoundation(
     },
     dnaVersions: normalizedDna.dnaVersions,
     activeVersionId: normalizedDna.activeVersionId,
-    status: input.status ?? "discovery",
+    status,
     readiness: {
       blueprint: input.readiness?.blueprint,
       dna: input.readiness?.dna,
@@ -157,6 +188,41 @@ export function getActiveGameDna(
   );
 }
 
+export function setFoundationStatus(
+  foundation: GameFoundation,
+  nextStatus: Exclude<GameFoundationStatus, "active">,
+  updatedAt = new Date().toISOString(),
+): GameFoundation {
+  if (foundation.status === nextStatus) {
+    return foundation;
+  }
+
+  if (!FOUNDATION_STATUS_TRANSITIONS[foundation.status].includes(nextStatus)) {
+    throw new Error(
+      `Invalid Game Foundation status transition: ${foundation.status} -> ${nextStatus}.`,
+    );
+  }
+
+  return {
+    ...withFoundationUpdatedAt(foundation, updatedAt),
+    status: nextStatus,
+  };
+}
+
+export function moveToDraft(
+  foundation: GameFoundation,
+  updatedAt = new Date().toISOString(),
+): GameFoundation {
+  return setFoundationStatus(foundation, "draft", updatedAt);
+}
+
+export function moveToReview(
+  foundation: GameFoundation,
+  updatedAt = new Date().toISOString(),
+): GameFoundation {
+  return setFoundationStatus(foundation, "review", updatedAt);
+}
+
 export function activateGameDnaVersion(
   foundation: GameFoundation,
   versionId: string,
@@ -167,16 +233,24 @@ export function activateGameDnaVersion(
   );
 
   if (!targetVersion) {
+    throw new Error(`Game DNA version not found: ${versionId}.`);
+  }
+
+  if (
+    foundation.activeVersionId === versionId &&
+    foundation.status === "active" &&
+    targetVersion.status === "active"
+  ) {
     return foundation;
   }
 
-  return {
+  const activatedFoundation = {
     ...foundation,
     dnaVersions: foundation.dnaVersions.map((version) => {
       if (version.id === versionId) {
         return {
           ...version,
-          status: "active",
+          status: "active" as const,
           updatedAt,
         };
       }
@@ -184,7 +258,7 @@ export function activateGameDnaVersion(
       if (version.status === "active") {
         return {
           ...version,
-          status: "archived",
+          status: "archived" as const,
           updatedAt,
         };
       }
@@ -192,5 +266,48 @@ export function activateGameDnaVersion(
       return version;
     }),
     activeVersionId: versionId,
+  };
+
+  return withFoundationUpdatedAt(activatedFoundation, updatedAt);
+}
+
+export function activateGameFoundation(
+  foundation: GameFoundation,
+  versionId: string,
+  updatedAt = new Date().toISOString(),
+): GameFoundation {
+  if (foundation.status === "active") {
+    if (foundation.activeVersionId === versionId) {
+      return foundation;
+    }
+
+    throw new Error(
+      "An active Game Foundation must move to review before activating a different Game DNA version.",
+    );
+  }
+
+  if (foundation.status !== "review") {
+    throw new Error(
+      `Invalid Game Foundation status transition: ${foundation.status} -> active.`,
+    );
+  }
+
+  const targetVersion = foundation.dnaVersions.find(
+    (version) => version.id === versionId,
+  );
+
+  if (!targetVersion) {
+    throw new Error(`Game DNA version not found: ${versionId}.`);
+  }
+
+  const activatedFoundation = activateGameDnaVersion(
+    foundation,
+    versionId,
+    updatedAt,
+  );
+
+  return {
+    ...activatedFoundation,
+    status: "active",
   };
 }
