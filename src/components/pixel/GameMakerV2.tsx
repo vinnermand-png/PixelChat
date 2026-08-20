@@ -9,7 +9,7 @@ type Cell = { gx: number; gy: number };
 type PlayerEntity = { gx: number; gy: number };
 type EdgeMaterial = "soil" | "rock" | "cliff";
 type AssetCategory = "nature" | "decoration";
-type AssetId = "testTree";
+type AssetId = "testTree" | "testLargeTree";
 type CollisionDefinition = { enabled: boolean; footprint: Cell[] };
 type AssetDefinition = { id: AssetId; name: string; category: AssetCategory; collision: CollisionDefinition };
 type PlacedObject = { id: string; assetId: AssetId; gx: number; gy: number };
@@ -28,7 +28,10 @@ const MAX_EDGE_DEPTH = 32;
 const EMPTY_HISTORY: HistoryState = { past: [], future: [] };
 const MAP_STORAGE_KEY = "pixelchat-game-maker-v2-map-v1";
 const DEFAULT_MAP_NAME = "Untitled Map";
-const ASSET_LIBRARY: readonly AssetDefinition[] = [{ id: "testTree", name: "Test Tree", category: "nature", collision: { enabled: true, footprint: [{ gx: 0, gy: 0 }] } }];
+const ASSET_LIBRARY: readonly AssetDefinition[] = [
+  { id: "testTree", name: "Test Tree", category: "nature", collision: { enabled: true, footprint: [{ gx: 0, gy: 0 }] } },
+  { id: "testLargeTree", name: "Test Large Tree", category: "nature", collision: { enabled: true, footprint: [{ gx: 0, gy: 0 }, { gx: 1, gy: 0 }, { gx: 0, gy: 1 }, { gx: 1, gy: 1 }] } }
+];
 
 function cellKey(gx: number, gy: number) { return `${gx},${gy}`; }
 function inBounds(gx: number, gy: number, gridSize: number) { return gx >= 0 && gy >= 0 && gx < gridSize && gy < gridSize; }
@@ -52,7 +55,7 @@ function drawFoundationFace(ctx: CanvasRenderingContext2D, a: { x: number; y: nu
 function drawFoundation(ctx: CanvasRenderingContext2D, terrain: Record<string, TerrainKey>, gridSize: number, material: EdgeMaterial, depth: number) { const has = (gx: number, gy: number) => inBounds(gx, gy, gridSize) && Boolean(terrain[cellKey(gx, gy)]); const palette = edgePalette(material); for (let s = 0; s <= (gridSize - 1) * 2; s++) for (let gx = 0; gx < gridSize; gx++) { const gy = s - gx; if (!has(gx, gy)) continue; const p = iso(gx, gy); const right = { x: p.x + TW / 2, y: p.y + TH / 2 }, bottom = { x: p.x, y: p.y + TH }, left = { x: p.x - TW / 2, y: p.y + TH / 2 }; if (!has(gx + 1, gy)) drawFoundationFace(ctx, right, bottom, palette.right, depth); if (!has(gx, gy + 1)) drawFoundationFace(ctx, left, bottom, palette.left, depth); } }
 function drawTerrainSurface(ctx: CanvasRenderingContext2D, terrain: Record<string, TerrainKey>, gridSize: number) { ctx.fillStyle = GRASS_COLOR; ctx.beginPath(); let any = false; for (let s = 0; s <= (gridSize - 1) * 2; s++) for (let gx = 0; gx < gridSize; gx++) { const gy = s - gx; if (!inBounds(gx, gy, gridSize) || !terrain[cellKey(gx, gy)]) continue; const p = iso(gx, gy); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + TW / 2, p.y + TH / 2); ctx.lineTo(p.x, p.y + TH); ctx.lineTo(p.x - TW / 2, p.y + TH / 2); ctx.closePath(); any = true; } if (any) ctx.fill(); }
 function drawTestTree(ctx: CanvasRenderingContext2D, gx: number, gy: number) { const p = iso(gx, gy), cx = p.x, groundY = p.y + TH / 2; ctx.fillStyle = "#6b3f20"; ctx.fillRect(Math.round(cx - 3), Math.round(groundY - 20), 6, 20); ctx.fillStyle = "#2f7d32"; ctx.beginPath(); ctx.moveTo(cx, groundY - 48); ctx.lineTo(cx + 17, groundY - 20); ctx.lineTo(cx - 17, groundY - 20); ctx.closePath(); ctx.fill(); ctx.fillStyle = "#4f9d2d"; ctx.beginPath(); ctx.moveTo(cx, groundY - 43); ctx.lineTo(cx + 12, groundY - 24); ctx.lineTo(cx - 12, groundY - 24); ctx.closePath(); ctx.fill(); }
-function drawAsset(ctx: CanvasRenderingContext2D, object: PlacedObject) { if (getAsset(object.assetId)?.id === "testTree") drawTestTree(ctx, object.gx, object.gy); }
+function drawAsset(ctx: CanvasRenderingContext2D, object: PlacedObject) { const asset = getAsset(object.assetId); if (asset?.id === "testTree" || asset?.id === "testLargeTree") drawTestTree(ctx, object.gx, object.gy); }
 function drawPlayer(ctx: CanvasRenderingContext2D, player: PlayerEntity) { const p = iso(player.gx, player.gy), y = p.y + TH / 2; ctx.save(); ctx.fillStyle = "#203a73"; ctx.fillRect(Math.round(p.x - 6), Math.round(y - 18), 12, 14); ctx.fillStyle = "#f0b28a"; ctx.beginPath(); ctx.arc(p.x, y - 24, 7, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = "#ffd84a"; ctx.fillRect(Math.round(p.x - 5), Math.round(y - 34), 10, 6); ctx.restore(); }
 function drawGridOverlay(ctx: CanvasRenderingContext2D, gridSize: number) { ctx.save(); ctx.strokeStyle = "rgba(185,205,225,.55)"; for (let s = 0; s <= (gridSize - 1) * 2; s++) for (let gx = 0; gx < gridSize; gx++) { const gy = s - gx; if (!inBounds(gx, gy, gridSize)) continue; traceDiamond(ctx, gx, gy); ctx.stroke(); } ctx.restore(); }
 function drawSelection(ctx: CanvasRenderingContext2D, object: PlacedObject | null) { if (!object) return; ctx.save(); ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 2; traceDiamond(ctx, object.gx, object.gy); ctx.stroke(); ctx.restore(); }
