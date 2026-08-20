@@ -69,6 +69,27 @@ function drawHover(ctx: CanvasRenderingContext2D, hover: Cell | null) {
   ctx.stroke();
 }
 
+function screenToCell(x: number, y: number, gridSize: number): Cell | null {
+  const raw = unIso(x, y);
+  const baseGx = Math.floor(raw.gx);
+  const baseGy = Math.floor(raw.gy);
+
+  // Check the mathematically likely cell plus immediate neighbours and use
+  // the actual diamond hit test. This avoids incorrect picks around edges.
+  for (let gy = baseGy - 1; gy <= baseGy + 1; gy++) {
+    for (let gx = baseGx - 1; gx <= baseGx + 1; gx++) {
+      if (!inBounds(gx, gy, gridSize)) continue;
+      const p = iso(gx, gy);
+      const centerX = p.x;
+      const centerY = p.y + TH / 2;
+      const distance = Math.abs(x - centerX) / (TW / 2) + Math.abs(y - centerY) / (TH / 2);
+      if (distance <= 1) return { gx, gy };
+    }
+  }
+
+  return null;
+}
+
 export default function GameMakerV2() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [world, setWorld] = useState<WorldData>(DEFAULT_WORLD);
@@ -95,10 +116,7 @@ export default function GameMakerV2() {
     const rect = canvas.getBoundingClientRect();
     const x = ((event.clientX - rect.left) / rect.width) * VIEW_W;
     const y = ((event.clientY - rect.top) / rect.height) * VIEW_H;
-    const raw = unIso(x, y);
-    const gx = Math.floor(raw.gx);
-    const gy = Math.floor(raw.gy);
-    return inBounds(gx, gy, world.gridSize) ? { gx, gy } : null;
+    return screenToCell(x, y, world.gridSize);
   }
 
   function paint(cell: Cell) {
@@ -121,7 +139,7 @@ export default function GameMakerV2() {
         <div style={{ color: "#7f95aa", fontSize: 12, letterSpacing: 2 }}>PIXELCHAT · GAME MAKER V2</div>
         <h1 style={{ margin: "6px 0 8px" }}>STEP 1 — WORLD FOUNDATION</h1>
         <p style={{ margin: 0, color: "#9fb0c2" }}>
-          Minimal world data, isometric coordinates, hover and terrain cell editing. No foundation, objects or grid overlay yet.
+          Minimal world data, verified isometric cell picking, hover and terrain cell editing. No foundation, objects or grid overlay yet.
         </p>
       </header>
 
@@ -140,6 +158,7 @@ export default function GameMakerV2() {
             <div><b>GRID DATA:</b> {world.gridSize} × {world.gridSize}</div>
             <div><b>TERRAIN CELLS:</b> {Object.keys(world.terrain).length}</div>
             <div><b>TOOL:</b> {tool.toUpperCase()}</div>
+            <div><b>HOVER:</b> {hover ? `${hover.gx}, ${hover.gy}` : "OUTSIDE WORLD"}</div>
           </div>
         </aside>
 
