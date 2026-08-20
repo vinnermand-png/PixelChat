@@ -2,157 +2,42 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { GRID, TH, TW, VIEW_H, VIEW_W, drawRock, drawTorvetGround, drawTree, iso, unIso } from "@/components/pixel/world";
 
-type Tool = "place" | "select" | "erase";
-type BuiltInAsset = "tree" | "rock";
-type AiCategory = "nature" | "building" | "furniture" | "character" | "effect";
-type AiAssetKind = "tree" | "rock" | "house" | "shop" | "table" | "chair" | "npc" | "fire";
-type WorldObject = { id: string; assetId: string; gx: number; gy: number };
-type AiDraft = { id: string; kind: AiAssetKind; prompt: string; title: string };
-type AiLibraryAsset = { id: string; title: string; kind: AiAssetKind; image: string };
+type Tool="place"|"select"|"erase";
+type Cat="nature"|"building"|"furniture"|"character"|"effect";
+type Obj={id:string;assetId:string;gx:number;gy:number};
+type Spec={key:string;label:string;cat:Cat;prompt:string;w:number;h:number};
+type Draft={id:string;title:string;note:string;prompt:string;spec:Spec};
+type AiAsset={id:string;title:string;image:string;spec:Spec};
 
-const STORAGE_KEY = "pixelchat-game-maker-v1";
-const AI_LIBRARY_KEY = "pixelchat-game-maker-ai-library-v1";
-const AI_KINDS: Record<AiCategory, AiAssetKind[]> = {
-  nature: ["tree", "rock"], building: ["house", "shop"], furniture: ["table", "chair"], character: ["npc"], effect: ["fire"],
-};
-const builtInAssets: { id: BuiltInAsset; label: string; icon: string }[] = [
-  { id: "tree", label: "TREE", icon: "🌲" }, { id: "rock", label: "ROCK", icon: "🪨" },
+const WORLD_KEY="pixelchat-game-maker-v1", LIB_KEY="pixelchat-game-maker-ai-library-v2";
+const CATS:Record<Cat,string>={nature:"NATURE",building:"BUILDING",furniture:"FURNITURE",character:"CHARACTER",effect:"EFFECT"};
+const raw:{cat:Cat;key:string;label:string;prompt:string;w:number;h:number}[]=[
+{cat:"nature",key:"tree",label:"TREE",prompt:"A natural forest tree",w:64,h:96},{cat:"nature",key:"pine",label:"PINE TREE",prompt:"A tall compact pine tree",w:56,h:96},{cat:"nature",key:"bush",label:"BUSH",prompt:"A compact green forest bush",w:48,h:40},{cat:"nature",key:"plant",label:"PLANT",prompt:"A small green forest plant",w:28,h:36},{cat:"nature",key:"flower",label:"FLOWER",prompt:"A small colorful wild flower",w:22,h:28},{cat:"nature",key:"mushroom",label:"MUSHROOM",prompt:"A small forest mushroom",w:24,h:24},{cat:"nature",key:"rock",label:"ROCK",prompt:"A compact natural grey rock",w:36,h:28},{cat:"nature",key:"boulder",label:"BOULDER",prompt:"A rounded natural boulder",w:48,h:36},{cat:"nature",key:"log",label:"LOG",prompt:"A fallen forest log",w:48,h:24},{cat:"nature",key:"stump",label:"TREE STUMP",prompt:"A small cut tree stump",w:34,h:30},{cat:"nature",key:"crystal",label:"CRYSTAL",prompt:"A small magical crystal formation",w:34,h:42},{cat:"nature",key:"water",label:"WATER DETAIL",prompt:"A small pixel water detail",w:48,h:24},
+{cat:"building",key:"house",label:"HOUSE",prompt:"A small cozy game house",w:96,h:96},{cat:"building",key:"cabin",label:"CABIN",prompt:"A rustic wooden forest cabin",w:96,h:96},{cat:"building",key:"shop",label:"SHOP",prompt:"A small fantasy game shop",w:96,h:96},{cat:"building",key:"tavern",label:"TAVERN",prompt:"A warm fantasy tavern",w:104,h:104},{cat:"building",key:"bridge",label:"BRIDGE",prompt:"A small wooden bridge",w:80,h:52},{cat:"building",key:"tower",label:"TOWER",prompt:"A compact stone tower",w:72,h:112},{cat:"building",key:"wall",label:"WALL",prompt:"A short stone wall section",w:64,h:40},{cat:"building",key:"gate",label:"GATE",prompt:"A wooden game gate",w:64,h:68},
+{cat:"furniture",key:"table",label:"TABLE",prompt:"A simple wooden table",w:44,h:40},{cat:"furniture",key:"chair",label:"CHAIR",prompt:"A simple wooden chair",w:32,h:46},{cat:"furniture",key:"bed",label:"BED",prompt:"A simple cozy bed",w:56,h:40},{cat:"furniture",key:"chest",label:"CHEST",prompt:"A small treasure chest",w:34,h:28},{cat:"furniture",key:"barrel",label:"BARREL",prompt:"A small wooden barrel",w:28,h:34},{cat:"furniture",key:"bench",label:"BENCH",prompt:"A simple wooden bench",w:56,h:34},{cat:"furniture",key:"lamp",label:"LAMP",prompt:"A small standing lantern",w:28,h:46},{cat:"furniture",key:"crate",label:"CRATE",prompt:"A small wooden crate",w:34,h:28},
+{cat:"character",key:"player",label:"PLAYER",prompt:"A friendly game player character",w:32,h:48},{cat:"character",key:"npc",label:"NPC",prompt:"A friendly fantasy town NPC",w:32,h:48},{cat:"character",key:"merchant",label:"MERCHANT",prompt:"A fantasy merchant",w:32,h:48},{cat:"character",key:"farmer",label:"FARMER",prompt:"A friendly farmer",w:32,h:48},{cat:"character",key:"guard",label:"GUARD",prompt:"A fantasy town guard",w:32,h:48},{cat:"character",key:"animal",label:"ANIMAL",prompt:"A small friendly game animal",w:40,h:34},
+{cat:"effect",key:"fire",label:"FIRE",prompt:"A small magical fire effect",w:32,h:44},{cat:"effect",key:"smoke",label:"SMOKE",prompt:"A small pixel smoke effect",w:32,h:44},{cat:"effect",key:"sparkles",label:"SPARKLES",prompt:"A small magical sparkle effect",w:34,h:34},{cat:"effect",key:"splash",label:"WATER SPLASH",prompt:"A small water splash effect",w:40,h:34},{cat:"effect",key:"dust",label:"DUST",prompt:"A small dust puff effect",w:40,h:28}
 ];
+const SPECS:Spec[]=raw.map(x=>({...x}));
+const first=SPECS[0];
+export const Route=createFileRoute("/game-maker")({component:GameMaker});
 
-export const Route = createFileRoute("/game-maker")({ component: GameMaker });
-
-function GameMaker() {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const imageCache = useRef<Record<string, HTMLImageElement>>({});
-  const [tool, setTool] = useState<Tool>("place");
-  const [selectedAssetId, setSelectedAssetId] = useState<string>("tree");
-  const [objects, setObjects] = useState<WorldObject[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hover, setHover] = useState<{ gx: number; gy: number } | null>(null);
-  const [status, setStatus] = useState("READY · 14 × 14 ISO GRID · 32 × 16 TILES");
-  const [factoryOpen, setFactoryOpen] = useState(false);
-  const [aiCategory, setAiCategory] = useState<AiCategory>("nature");
-  const [aiKind, setAiKind] = useState<AiAssetKind>("tree");
-  const [aiPrompt, setAiPrompt] = useState("Ancient oak tree with a thick brown trunk and a dense green crown");
-  const [drafts, setDrafts] = useState<AiDraft[]>([]);
-  const [selectedDraft, setSelectedDraft] = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [factoryError, setFactoryError] = useState("");
-  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
-  const [generatedLabel, setGeneratedLabel] = useState("");
-  const [libraryAssets, setLibraryAssets] = useState<AiLibraryAsset[]>([]);
-
-  const loadImage = (id: string, src: string) => {
-    if (imageCache.current[id]) return;
-    const image = new Image();
-    image.onload = () => { imageCache.current[id] = image; };
-    image.src = src;
-    imageCache.current[id] = image;
-  };
-
-  useEffect(() => {
-    try {
-      const savedWorld = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-      if (Array.isArray(savedWorld)) setObjects(savedWorld);
-      const savedLibrary = JSON.parse(localStorage.getItem(AI_LIBRARY_KEY) || "[]");
-      if (Array.isArray(savedLibrary)) {
-        setLibraryAssets(savedLibrary);
-        savedLibrary.forEach((asset: AiLibraryAsset) => loadImage(asset.id, asset.image));
-      }
-    } catch { setStatus("LOCAL SAVE DATA COULD NOT BE READ"); }
-  }, []);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, VIEW_W, VIEW_H);
-    drawTorvetGround(ctx);
-    [...objects].sort((a, b) => a.gx + a.gy - (b.gx + b.gy)).forEach((object) => {
-      if (object.assetId === "tree") drawTree(ctx, object.gx, object.gy);
-      else if (object.assetId === "rock") drawRock(ctx, object.gx, object.gy);
-      else {
-        const image = imageCache.current[object.assetId];
-        if (image?.complete && image.naturalWidth) {
-          const p = iso(object.gx, object.gy);
-          const scale = Math.min(72 / image.naturalWidth, 112 / image.naturalHeight, 1);
-          const width = Math.max(16, Math.round(image.naturalWidth * scale));
-          const height = Math.max(16, Math.round(image.naturalHeight * scale));
-          ctx.drawImage(image, Math.round(p.x - width / 2), Math.round(p.y + TH - height), width, height);
-        }
-      }
-    });
-    if (hover) {
-      const p = iso(hover.gx, hover.gy);
-      ctx.save(); ctx.strokeStyle = "#f0c14b"; ctx.lineWidth = 1; ctx.beginPath();
-      ctx.moveTo(Math.round(p.x), Math.round(p.y)); ctx.lineTo(Math.round(p.x + TW / 2), Math.round(p.y + TH / 2));
-      ctx.lineTo(Math.round(p.x), Math.round(p.y + TH)); ctx.lineTo(Math.round(p.x - TW / 2), Math.round(p.y + TH / 2)); ctx.closePath(); ctx.stroke(); ctx.restore();
-    }
-  }, [objects, hover, libraryAssets]);
-
-  const getCell = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current; if (!canvas) return null;
-    const rect = canvas.getBoundingClientRect();
-    const raw = unIso(((event.clientX - rect.left) / rect.width) * VIEW_W, ((event.clientY - rect.top) / rect.height) * VIEW_H);
-    const gx = Math.round(raw.gx), gy = Math.round(raw.gy);
-    return gx < 0 || gy < 0 || gx >= GRID || gy >= GRID ? null : { gx, gy };
-  };
-
-  const saveWorld = () => { localStorage.setItem(STORAGE_KEY, JSON.stringify(objects)); setStatus(`SAVED · ${objects.length} OBJECTS · PIXELCHAT WORLD V1`); };
-  const loadWorld = () => { try { const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); setObjects(Array.isArray(saved) ? saved : []); setStatus(`LOADED · ${Array.isArray(saved) ? saved.length : 0} OBJECTS`); } catch { setStatus("SAVE DATA IS INVALID"); } };
-  const clearWorld = () => { setObjects([]); setSelectedId(null); setStatus("WORLD CLEARED · NOT SAVED YET"); };
-
-  const generateDrafts = () => {
-    const base = aiPrompt.trim() || `${aiKind} for PixelChat`;
-    const created = Array.from({ length: 4 }, (_, index): AiDraft => ({ id: `draft-${Date.now()}-${index}`, kind: aiKind, prompt: base, title: `${aiKind.toUpperCase()} VARIANT 0${index + 1}` }));
-    setDrafts(created); setSelectedDraft(created[0].id); setGeneratedImage(null); setFactoryError("");
-    setStatus(`AI FACTORY BLUEPRINTED 4 ${aiKind.toUpperCase()} VARIANTS · SELECT ONE AND APPROVE`);
-  };
-
-  const approveDraft = async () => {
-    const draft = drafts.find((item) => item.id === selectedDraft);
-    if (!draft) { setFactoryError("SELECT A BLUEPRINT FIRST."); return; }
-    setGenerating(true); setFactoryError(""); setGeneratedImage(null);
-    setStatus(`GENERATING REAL ${draft.kind.toUpperCase()} ASSET WITH OPENAI IMAGE ENGINE...`);
-    try {
-      const response = await fetch("/api/generate-asset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: draft.prompt }) });
-      const payload = await response.json() as { imageBase64?: string; error?: string };
-      if (!response.ok || !payload.imageBase64) throw new Error(payload.error || "OPENAI RETURNED NO IMAGE.");
-      setGeneratedImage(`data:image/png;base64,${payload.imageBase64}`); setGeneratedLabel(draft.title);
-      setStatus(`REAL PNG GENERATED · ${draft.title} · REVIEW BEFORE ADDING TO LIBRARY`);
-    } catch (error) {
-      setFactoryError(error instanceof Error ? error.message : "UNKNOWN GENERATION ERROR.");
-      setStatus("AI IMAGE GENERATION FAILED · SEE FACTORY ERROR");
-    } finally { setGenerating(false); }
-  };
-
-  const addGeneratedToLibrary = () => {
-    if (!generatedImage) { setFactoryError("NO GENERATED PNG TO ACCEPT."); return; }
-    const draft = drafts.find((item) => item.id === selectedDraft);
-    const id = `ai-${Date.now()}`;
-    const newAsset: AiLibraryAsset = { id, title: generatedLabel || "AI ASSET", kind: draft?.kind || aiKind, image: generatedImage };
-    const nextLibrary = [...libraryAssets, newAsset];
-    setLibraryAssets(nextLibrary);
-    loadImage(id, generatedImage);
-    try { localStorage.setItem(AI_LIBRARY_KEY, JSON.stringify(nextLibrary)); } catch { setFactoryError("ASSET ADDED FOR THIS SESSION, BUT LIBRARY SAVE IS FULL."); }
-    setSelectedAssetId(id); setTool("place"); setFactoryOpen(false);
-    setStatus(`AI ASSET ADDED TO LIBRARY · ${newAsset.title} · SELECTED AND READY TO PLACE`);
-  };
-
-  const selectedObject = objects.find((object) => object.id === selectedId) ?? null;
-  const selectedLibraryAsset = libraryAssets.find((asset) => asset.id === selectedAssetId);
-  const selectedName = selectedLibraryAsset?.title || selectedAssetId.toUpperCase();
-  const changeCategory = (category: AiCategory) => { setAiCategory(category); setAiKind(AI_KINDS[category][0]); };
-
-  return <main className="min-h-screen bg-background px-3 py-5 text-foreground"><section className="mx-auto max-w-[1240px]">
-    <header className="mb-3 flex flex-wrap items-center justify-between gap-2 border-2 border-border bg-card px-4 py-3 shadow-[4px_4px_0_hsl(var(--border))]"><div><h1 className="text-[18px] text-primary">PIXEL<span className="text-accent">GAME MAKER</span></h1><p className="mt-1 text-[8px] text-muted-foreground">PIXELCHAT PLATFORM V1 · PRECISION EDITOR · AI ASSET FACTORY</p></div><div className="flex flex-wrap gap-2"><button className="pixel-btn" onClick={() => setFactoryOpen(true)}>AI FACTORY</button><button className="pixel-btn" onClick={saveWorld}>SAVE</button><button className="pixel-btn" onClick={loadWorld}>LOAD</button><button className="pixel-btn" onClick={clearWorld}>CLEAR</button><a className="pixel-btn" href="/">PLAY CHAT</a></div></header>
-    <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)_230px]">
-      <aside className="border-2 border-border bg-card p-3"><div className="mb-4 flex items-center justify-between gap-2"><h2 className="text-[11px] text-primary">ASSET LIBRARY</h2><button className="pixel-btn px-2 py-1 text-[7px]" onClick={() => setFactoryOpen(true)}>+ AI</button></div><p className="mb-2 text-[8px] text-muted-foreground">PLATFORM-LOCKED ASSETS</p><div className="space-y-2">{builtInAssets.map((item) => <button key={item.id} className={`pixel-btn w-full text-left ${selectedAssetId === item.id ? "ring-2 ring-primary" : ""}`} onClick={() => { setSelectedAssetId(item.id); setTool("place"); }}>{item.icon} {item.label}</button>)}</div><div className="mt-4 border-t-2 border-border pt-3"><p className="mb-2 text-[8px] text-primary">AI GENERATED ASSETS · {libraryAssets.length}</p>{libraryAssets.length === 0 ? <p className="text-[8px] text-muted-foreground">NO AI ASSETS ACCEPTED YET</p> : <div className="space-y-2">{libraryAssets.map((item) => <button key={item.id} className={`flex w-full items-center gap-2 border-2 border-border p-2 text-left text-[7px] ${selectedAssetId === item.id ? "ring-2 ring-primary" : ""}`} onClick={() => { setSelectedAssetId(item.id); setTool("place"); }}><img src={item.image} alt="" className="h-10 w-10 object-contain [image-rendering:pixelated]" /><span>{item.title}<br/><span className="text-muted-foreground">{item.kind.toUpperCase()}</span></span></button>)}</div>}</div><div className="mt-5 border-t-2 border-border pt-4"><h3 className="mb-2 text-[10px] text-primary">TOOLS</h3><div className="space-y-2"><button className={`pixel-btn w-full ${tool === "place" ? "ring-2 ring-primary" : ""}`} onClick={() => setTool("place")}>PLACE</button><button className={`pixel-btn w-full ${tool === "select" ? "ring-2 ring-primary" : ""}`} onClick={() => setTool("select")}>SELECT</button><button className={`pixel-btn w-full ${tool === "erase" ? "ring-2 ring-primary" : ""}`} onClick={() => setTool("erase")}>ERASE</button></div></div></aside>
-      <section className="border-2 border-border bg-card p-3"><div className="mb-2 flex items-center justify-between gap-2 text-[8px] text-muted-foreground"><span>LIVE ISO WORLD · {selectedName}</span><span>{hover ? `GRID ${hover.gx}, ${hover.gy}` : "MOVE OVER MAP"}</span></div><div className="overflow-hidden border-2 border-border bg-[#0d1423]"><canvas ref={canvasRef} width={VIEW_W} height={VIEW_H} className="block h-auto w-full cursor-crosshair [image-rendering:pixelated]" onPointerMove={(event) => setHover(getCell(event))} onPointerLeave={() => setHover(null)} onPointerDown={(event) => { const cell = getCell(event); if (!cell) return; const matches = objects.filter((o) => o.gx === cell.gx && o.gy === cell.gy); if (tool === "erase") { setObjects((current) => current.filter((o) => !(o.gx === cell.gx && o.gy === cell.gy))); setStatus(`ERASED GRID ${cell.gx}, ${cell.gy}`); return; } if (tool === "select") { const hit = matches[matches.length - 1]; setSelectedId(hit?.id ?? null); setStatus(hit ? `SELECTED ${hit.assetId.toUpperCase()} · GRID ${cell.gx}, ${cell.gy}` : `EMPTY GRID ${cell.gx}, ${cell.gy}`); return; } const object: WorldObject = { id: `${selectedAssetId}-${cell.gx}-${cell.gy}-${Date.now()}`, assetId: selectedAssetId, gx: cell.gx, gy: cell.gy }; setObjects((current) => [...current, object]); setSelectedId(object.id); setStatus(`PLACED ${selectedName} · GRID ${cell.gx}, ${cell.gy} · AUTO-ANCHORED`); }} /></div><p className="mt-3 text-[8px] leading-[1.7] text-muted-foreground">{status}</p></section>
-      <aside className="border-2 border-border bg-card p-3"><h2 className="mb-3 text-[11px] text-primary">PLATFORM INSPECTOR</h2><dl className="space-y-3 text-[9px]"><div><dt className="text-muted-foreground">TILE</dt><dd>32 × 16 PX</dd></div><div><dt className="text-muted-foreground">GRID</dt><dd>14 × 14</dd></div><div><dt className="text-muted-foreground">VIEWPORT</dt><dd>480 × 300 PX</dd></div><div><dt className="text-muted-foreground">RENDERING</dt><dd>PIXEL PERFECT</dd></div><div><dt className="text-muted-foreground">SNAP</dt><dd>AUTOMATIC</dd></div><div><dt className="text-muted-foreground">DEPTH</dt><dd>AUTO SORT</dd></div></dl><div className="mt-5 border-t-2 border-border pt-4 text-[8px] text-muted-foreground"><p className="mb-1 text-primary">SELECTED</p><p>{selectedObject ? selectedObject.assetId.toUpperCase() : "NONE"}</p><p className="mt-3">OBJECTS: {objects.length}</p><p className="mt-3">AI LIBRARY: {libraryAssets.length}</p></div></aside>
-    </div>
-    {factoryOpen && <div className="fixed inset-0 z-50 overflow-y-auto bg-[#050914]/90 p-4"><section className="mx-auto my-6 max-w-[1080px] border-2 border-border bg-card p-4 shadow-[6px_6px_0_hsl(var(--border))]"><div className="mb-4 flex items-start justify-between gap-4 border-b-2 border-border pb-3"><div><h2 className="text-[16px] text-primary">AI ASSET FACTORY</h2><p className="mt-1 text-[8px] text-muted-foreground">GENERATE ASSET BLUEPRINTS FROM A LOCKED PIXELCHAT PLATFORM PROFILE</p></div><button className="pixel-btn" onClick={() => setFactoryOpen(false)}>CLOSE</button></div><div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_260px]"><div className="border-2 border-border p-3"><h3 className="mb-3 text-[10px] text-primary">1. ASSET TYPE</h3>{(Object.keys(AI_KINDS) as AiCategory[]).map((category) => <button key={category} className={`pixel-btn mb-2 w-full text-left ${aiCategory === category ? "ring-2 ring-primary" : ""}`} onClick={() => changeCategory(category)}>{category.toUpperCase()}</button>)}<h3 className="mb-2 mt-4 text-[10px] text-primary">SUB TYPE</h3>{AI_KINDS[aiCategory].map((kind) => <button key={kind} className={`pixel-btn mb-2 w-full text-left ${aiKind === kind ? "ring-2 ring-primary" : ""}`} onClick={() => setAiKind(kind)}>{kind.toUpperCase()}</button>)}</div><div className="border-2 border-border p-3"><h3 className="mb-3 text-[10px] text-primary">2. DESCRIBE THE ASSET</h3><textarea value={aiPrompt} onChange={(event) => setAiPrompt(event.target.value)} className="min-h-[160px] w-full resize-y border-2 border-border bg-background p-3 text-[10px] leading-relaxed outline-none" /><div className="mt-3 grid grid-cols-2 gap-2 text-[8px] text-muted-foreground"><div className="border-2 border-border p-3"><p className="text-primary">STYLE LOCK 🔒</p><p>PIXELCHAT V1</p><p>CRISP PIXELS</p><p>NO ANTI-ALIASING</p><p>TRANSPARENT RGBA</p></div><div className="border-2 border-border p-3"><p className="text-primary">AUTO PRECISION</p><p>PLATFORM SCALE</p><p>AUTO ANCHOR</p><p>DEPTH COMPATIBLE</p><p>ASSET VALIDATION</p></div></div><button className="pixel-btn mt-4 w-full" onClick={generateDrafts}>GENERATE 4 VARIANTS</button></div><div className="border-2 border-border p-3 text-[8px] leading-[1.8] text-muted-foreground"><h3 className="mb-3 text-[10px] text-primary">3. FACTORY STATUS</h3><p>PROFILE: PIXELCHAT V1 ✓</p><p>CATEGORY: {aiCategory.toUpperCase()}</p><p>ASSET: {aiKind.toUpperCase()}</p><p>OUTPUT: TRANSPARENT PNG</p><p>ANCHOR: AUTO</p><p>COLLISION: AUTO PROFILE</p><div className="mt-4 border-t-2 border-border pt-3"><p className="text-primary">VALIDATION PIPELINE</p><p>PROMPT → STYLE → GENERATE → REVIEW → LIBRARY</p></div>{factoryError && <div className="mt-4 border-2 border-red-500 p-2 text-red-300">ERROR: {factoryError}</div>}</div></div>{drafts.length > 0 && <div className="mt-4 border-t-2 border-border pt-4"><div className="mb-3 flex items-center justify-between gap-3"><div><h3 className="text-[12px] text-primary">GENERATED BLUEPRINTS</h3><p className="text-[8px] text-muted-foreground">CHOOSE ONE, THEN APPROVE SELECTED TO GENERATE A REAL PNG</p></div><button className="pixel-btn" disabled={generating} onClick={approveDraft}>{generating ? "GENERATING REAL ASSET..." : "APPROVE SELECTED"}</button></div><div className="grid gap-3 md:grid-cols-4">{drafts.map((draft) => <button key={draft.id} className={`border-2 border-border p-3 text-left ${selectedDraft === draft.id ? "ring-2 ring-primary" : ""}`} onClick={() => setSelectedDraft(draft.id)}><div className="flex h-16 items-center justify-center border-2 border-border text-2xl">{draft.kind === "tree" ? "🌲" : draft.kind === "rock" ? "🪨" : "✦"}</div><p className="mt-2 text-[9px] text-primary">{draft.title}</p><p className="mt-2 text-[7px] text-muted-foreground">COMPOSITION VARIANT</p><p className="mt-2 text-[7px] text-accent">✓ PLATFORM COMPATIBLE</p></button>)}</div></div>}{generatedImage && <div className="mt-4 border-2 border-primary p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-[12px] text-primary">REAL GENERATED ASSET</h3><p className="text-[8px] text-muted-foreground">TRANSPARENT PNG · REVIEW RESULT BEFORE ADDING TO LIBRARY</p></div><div className="flex gap-2"><button className="pixel-btn" onClick={approveDraft}>REGENERATE</button><button className="pixel-btn" onClick={addGeneratedToLibrary}>ACCEPT TO LIBRARY</button></div></div><div className="flex min-h-[300px] items-center justify-center border-2 border-border bg-[#0d1423]"><img src={generatedImage} alt={generatedLabel} className="max-h-[460px] max-w-full object-contain [image-rendering:pixelated]" /></div></div>}</section></div>}
-  </section></main>;
+function GameMaker(){
+const canvasRef=useRef<HTMLCanvasElement|null>(null), cache=useRef<Record<string,HTMLImageElement>>({});
+const [tool,setTool]=useState<Tool>("place"),[selected,setSelected]=useState("tree"),[objects,setObjects]=useState<Obj[]>([]),[hover,setHover]=useState<{gx:number;gy:number}|null>(null),[status,setStatus]=useState("READY · 14 × 14 ISO GRID · 32 × 16 TILES");
+const [open,setOpen]=useState(false),[cat,setCat]=useState<Cat>("nature"),[specKey,setSpecKey]=useState(first.key),[search,setSearch]=useState(""),[prompt,setPrompt]=useState(first.prompt),[drafts,setDrafts]=useState<Draft[]>([]),[selectedDraft,setSelectedDraft]=useState<string|null>(null),[generating,setGenerating]=useState(false),[image,setImage]=useState<string|null>(null),[error,setError]=useState(""),[library,setLibrary]=useState<AiAsset[]>([]);
+const spec=SPECS.find(x=>x.key===specKey)||first;
+const visible=SPECS.filter(x=>x.cat===cat&&x.label.toLowerCase().includes(search.toLowerCase()));
+const load=(id:string,src:string)=>{if(cache.current[id])return;const i=new Image();i.onload=()=>{cache.current[id]=i};i.src=src;cache.current[id]=i};
+useEffect(()=>{try{const w=JSON.parse(localStorage.getItem(WORLD_KEY)||"[]");if(Array.isArray(w))setObjects(w);const l=JSON.parse(localStorage.getItem(LIB_KEY)||"[]");if(Array.isArray(l)){setLibrary(l);l.forEach((a:AiAsset)=>load(a.id,a.image))}}catch{}},[]);
+useEffect(()=>{const c=canvasRef.current;if(!c)return;const x=c.getContext("2d");if(!x)return;x.imageSmoothingEnabled=false;x.clearRect(0,0,VIEW_W,VIEW_H);drawTorvetGround(x);[...objects].sort((a,b)=>a.gx+a.gy-b.gx-b.gy).forEach(o=>{if(o.assetId==="tree")drawTree(x,o.gx,o.gy);else if(o.assetId==="rock")drawRock(x,o.gx,o.gy);else{const a=library.find(z=>z.id===o.assetId),i=cache.current[o.assetId];if(a&&i?.complete&&i.naturalWidth){const p=iso(o.gx,o.gy);x.drawImage(i,Math.round(p.x-a.spec.w/2),Math.round(p.y+TH-a.spec.h),a.spec.w,a.spec.h)}}});if(hover){const p=iso(hover.gx,hover.gy);x.strokeStyle="#f0c14b";x.beginPath();x.moveTo(p.x,p.y);x.lineTo(p.x+TW/2,p.y+TH/2);x.lineTo(p.x,p.y+TH);x.lineTo(p.x-TW/2,p.y+TH/2);x.closePath();x.stroke()}},[objects,hover,library]);
+const cell=(e:React.PointerEvent<HTMLCanvasElement>)=>{const c=canvasRef.current;if(!c)return null;const r=c.getBoundingClientRect(),u=unIso(((e.clientX-r.left)/r.width)*VIEW_W,((e.clientY-r.top)/r.height)*VIEW_H),gx=Math.round(u.gx),gy=Math.round(u.gy);return gx<0||gy<0||gx>=GRID||gy>=GRID?null:{gx,gy}};
+const chooseCat=(v:Cat)=>{const s=SPECS.find(x=>x.cat===v)||first;setCat(v);setSpecKey(s.key);setPrompt(s.prompt);setSearch("");setDrafts([]);setImage(null)};
+const chooseSpec=(s:Spec)=>{setSpecKey(s.key);setPrompt(s.prompt);setDrafts([]);setImage(null);setError("")};
+const makeDrafts=()=>{const base=prompt.trim()||spec.prompt,notes=["compact silhouette","balanced proportions","more organic shape","strongest readable silhouette"],now=Date.now(),d=notes.map((note,i)=>({id:`d-${now}-${i}`,title:`${spec.label} VARIANT 0${i+1}`,note,prompt:`${base}. Design direction: ${note}.`,spec}));setDrafts(d);setSelectedDraft(d[0].id);setImage(null);setError("");setStatus(`4 NEW ${spec.label} BLUEPRINTS CREATED FROM YOUR PROMPT`)};
+const generate=async()=>{const d=drafts.find(x=>x.id===selectedDraft);if(!d){setError("GENERATE BLUEPRINTS AND SELECT ONE FIRST.");return}setGenerating(true);setError("");setImage(null);setStatus(`GENERATING REAL ${d.spec.label} WITH LOCKED PLATFORM RULES...`);const contract=`PixelChat platform contract. Category: ${d.spec.cat}. Asset: ${d.spec.label}. One standalone object only. Transparent background. Bottom-center ground anchor. Crisp hard pixel art. No anti-aliasing. No text. No scenery. No extra objects. Compact readable silhouette. The final in-world display size is locked to ${d.spec.w} by ${d.spec.h} pixels.`;try{const r=await fetch("/api/generate-asset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:`${d.prompt}\n\n${contract}`})}),p=await r.json() as {imageBase64?:string;error?:string};if(!r.ok||!p.imageBase64)throw new Error(p.error||"OPENAI RETURNED NO IMAGE.");setImage(`data:image/png;base64,${p.imageBase64}`);setStatus(`REAL PNG GENERATED · ${d.title} · WORLD SCALE LOCKED TO ${d.spec.w}×${d.spec.h}`)}catch(e){setError(e instanceof Error?e.message:"UNKNOWN GENERATION ERROR") }finally{setGenerating(false)}};
+const accept=()=>{const d=drafts.find(x=>x.id===selectedDraft);if(!image||!d){setError("NO GENERATED ASSET TO ACCEPT.");return}const a:AiAsset={id:`ai-${Date.now()}`,title:d.title,image,spec:d.spec},next=[...library,a];setLibrary(next);load(a.id,a.image);try{localStorage.setItem(LIB_KEY,JSON.stringify(next))}catch{}setSelected(a.id);setTool("place");setOpen(false);setStatus(`AI ASSET ADDED · ${a.title} · AUTO-SCALED AND READY TO PLACE`)};
+const selectedAsset=library.find(x=>x.id===selected),name=selectedAsset?.title||selected.toUpperCase();
+return <main className="min-h-screen bg-background px-3 py-5 text-foreground"><section className="mx-auto max-w-[1240px]"><header className="mb-3 flex flex-wrap items-center justify-between gap-2 border-2 border-border bg-card px-4 py-3"><div><h1 className="text-[18px] text-primary">PIXEL<span className="text-accent">GAME MAKER</span></h1><p className="mt-1 text-[8px] text-muted-foreground">PIXELCHAT PLATFORM V1 · PRECISION EDITOR · AI ASSET FACTORY</p></div><div className="flex flex-wrap gap-2"><button className="pixel-btn" onClick={()=>setOpen(true)}>AI FACTORY</button><button className="pixel-btn" onClick={()=>{localStorage.setItem(WORLD_KEY,JSON.stringify(objects));setStatus("WORLD SAVED")}}>SAVE</button><button className="pixel-btn" onClick={()=>setObjects([])}>CLEAR</button><a className="pixel-btn" href="/">PLAY CHAT</a></div></header><div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)_230px]"><aside className="border-2 border-border bg-card p-3"><div className="mb-4 flex items-center justify-between"><h2 className="text-[11px] text-primary">ASSET LIBRARY</h2><button className="pixel-btn px-2 py-1 text-[7px]" onClick={()=>setOpen(true)}>+ AI</button></div><div className="space-y-2"><button className={`pixel-btn w-full text-left ${selected==="tree"?"ring-2 ring-primary":""}`} onClick={()=>{setSelected("tree");setTool("place")}}>🌲 TREE</button><button className={`pixel-btn w-full text-left ${selected==="rock"?"ring-2 ring-primary":""}`} onClick={()=>{setSelected("rock");setTool("place")}}>🪨 ROCK</button></div><div className="mt-4 border-t-2 border-border pt-3"><p className="mb-2 text-[8px] text-primary">AI GENERATED ASSETS · {library.length}</p>{library.length===0?<p className="text-[8px] text-muted-foreground">CLICK + AI TO CREATE</p>:<div className="space-y-2">{library.map(a=><button key={a.id} className={`flex w-full items-center gap-2 border-2 border-border p-2 text-left text-[7px] ${selected===a.id?"ring-2 ring-primary":""}`} onClick={()=>{setSelected(a.id);setTool("place")}}><img src={a.image} className="h-10 w-10 object-contain [image-rendering:pixelated]"/><span>{a.title}<br/><span className="text-muted-foreground">{a.spec.label}</span></span></button>)}</div>}</div><div className="mt-5 border-t-2 border-border pt-4 space-y-2"><button className={`pixel-btn w-full ${tool==="place"?"ring-2 ring-primary":""}`} onClick={()=>setTool("place")}>PLACE</button><button className={`pixel-btn w-full ${tool==="select"?"ring-2 ring-primary":""}`} onClick={()=>setTool("select")}>SELECT</button><button className={`pixel-btn w-full ${tool==="erase"?"ring-2 ring-primary":""}`} onClick={()=>setTool("erase")}>ERASE</button></div></aside><section className="border-2 border-border bg-card p-3"><div className="mb-2 flex justify-between text-[8px] text-muted-foreground"><span>LIVE ISO WORLD · {name}</span><span>{hover?`GRID ${hover.gx}, ${hover.gy}`:"MOVE OVER MAP"}</span></div><div className="overflow-hidden border-2 border-border bg-[#0d1423]"><canvas ref={canvasRef} width={VIEW_W} height={VIEW_H} className="block h-auto w-full cursor-crosshair [image-rendering:pixelated]" onPointerMove={e=>setHover(cell(e))} onPointerLeave={()=>setHover(null)} onPointerDown={e=>{const p=cell(e);if(!p)return;if(tool==="erase"){setObjects(v=>v.filter(o=>o.gx!==p.gx||o.gy!==p.gy));return}if(tool==="place"){const o={id:`${selected}-${Date.now()}`,assetId:selected,gx:p.gx,gy:p.gy};setObjects(v=>[...v,o]);setStatus(`PLACED ${name} · AUTO-ANCHORED`)}}}/></div><p className="mt-3 text-[8px] text-muted-foreground">{status}</p></section><aside className="border-2 border-border bg-card p-3"><h2 className="mb-3 text-[11px] text-primary">PLATFORM INSPECTOR</h2><p className="text-[9px] leading-loose text-muted-foreground">TILE<br/><b>32 × 16 PX</b><br/>GRID<br/><b>14 × 14</b><br/>RENDERING<br/><b>PIXEL PERFECT</b><br/>SNAP<br/><b>AUTOMATIC</b><br/>DEPTH<br/><b>AUTO SORT</b></p></aside></div>
+{open&&<div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 p-3"><div className="mx-auto my-3 max-w-[1360px] border-2 border-border bg-card p-3"><div className="mb-3 flex items-center justify-between border-b-2 border-border pb-3"><div><h2 className="text-[15px] text-primary">AI ASSET FACTORY</h2><p className="text-[7px] text-muted-foreground">1. PICK WHAT YOU WANT → 2. DESCRIBE IT → 3. GENERATE → 4. ACCEPT</p></div><button className="pixel-btn" onClick={()=>setOpen(false)}>CLOSE</button></div><div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)_230px]"><aside className="border-2 border-border p-3"><p className="mb-2 text-[9px] text-primary">1. PICK A CATEGORY</p><div className="space-y-2">{(Object.keys(CATS) as Cat[]).map(c=><button key={c} className={`pixel-btn w-full text-left ${cat===c?"ring-2 ring-primary":""}`} onClick={()=>chooseCat(c)}>{CATS[c]}</button>)}</div><div className="mt-4 border-t-2 border-border pt-3"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="SEARCH..." className="w-full border-2 border-border bg-background px-2 py-2 text-[8px] outline-none"/><p className="mb-2 mt-3 text-[8px] text-muted-foreground">2. PICK THE BASE ASSET</p><div className="max-h-[360px] space-y-1 overflow-y-auto">{visible.map(s=><button key={s.key} className={`pixel-btn w-full text-left text-[8px] ${specKey===s.key?"ring-2 ring-primary":""}`} onClick={()=>chooseSpec(s)}>{s.label}</button>)}</div></div></aside><section className="border-2 border-border p-3"><p className="mb-2 text-[9px] text-primary">3. DESCRIBE YOUR {spec.label}</p><textarea value={prompt} onChange={e=>setPrompt(e.target.value)} className="h-40 w-full resize-y border-2 border-border bg-background p-3 text-[10px] outline-none"/><div className="mt-3 grid gap-3 md:grid-cols-2"><div className="border-2 border-border p-3 text-[8px] text-muted-foreground"><b className="text-primary">AUTOMATIC PLATFORM RULES</b><br/>WORLD SIZE: {spec.w} × {spec.h} PX<br/>ANCHOR: BOTTOM CENTER<br/>BACKGROUND: TRANSPARENT<br/>PIXEL STYLE: HARD / NO AA</div><div className="border-2 border-border p-3 text-[8px] text-muted-foreground"><b className="text-primary">YOU ONLY DESCRIBE THE LOOK</b><br/>The editor automatically controls size, world scale, anchor and pixel rules.</div></div><button className="pixel-btn mt-3 w-full" onClick={makeDrafts}>GENERATE 4 {spec.label} VARIANTS</button></section><aside className="border-2 border-border p-3 text-[8px] text-muted-foreground"><h3 className="text-[10px] text-primary">FACTORY STATUS</h3><p className="mt-3 leading-loose">PROFILE: PIXELCHAT V1 ✓<br/>CATEGORY: {CATS[cat]}<br/>ASSET: {spec.label}<br/>OUTPUT: TRANSPARENT PNG<br/>SCALE: PLATFORM LOCKED<br/>ANCHOR: AUTO</p></aside></div>{drafts.length>0&&<section className="mt-3 border-t-2 border-border pt-3"><div className="mb-2 flex justify-between"><div><h3 className="text-[11px] text-primary">GENERATED BLUEPRINTS</h3><p className="text-[7px] text-muted-foreground">NEW BLUEPRINTS FROM YOUR CURRENT ASSET AND PROMPT</p></div><button className="pixel-btn" disabled={generating} onClick={generate}>{generating?"GENERATING...":"APPROVE SELECTED"}</button></div><div className="grid gap-2 md:grid-cols-4">{drafts.map(d=><button key={d.id} className={`border-2 p-3 text-left ${selectedDraft===d.id?"border-primary ring-2 ring-primary":"border-border"}`} onClick={()=>setSelectedDraft(d.id)}><div className="mb-3 flex h-12 items-center justify-center border-2 border-border">{d.spec.label}</div><p className="text-[9px] text-primary">{d.title}</p><p className="mt-2 text-[7px] text-muted-foreground">{d.note}</p><p className="mt-2 text-[7px] text-accent">✓ PLATFORM COMPATIBLE</p></button>)}</div></section>}{(image||error)&&<section className="mt-3 border-2 border-primary p-3"><div className="mb-2 flex justify-between"><div><h3 className="text-[11px] text-primary">REAL GENERATED ASSET</h3><p className="text-[7px] text-muted-foreground">WORLD SCALE IS LOCKED BY THE SELECTED ASSET TYPE</p></div>{image&&<div className="flex gap-2"><button className="pixel-btn" onClick={generate}>REGENERATE</button><button className="pixel-btn" onClick={accept}>ACCEPT TO LIBRARY</button></div>}</div>{error&&<p className="border-2 border-red-500 p-3 text-[8px] text-red-300">{error}</p>}{image&&<div className="grid gap-3 lg:grid-cols-[1fr_220px]"><div className="flex min-h-[360px] items-center justify-center border-2 border-border bg-background p-4"><img src={image} className="max-h-[500px] max-w-full object-contain [image-rendering:pixelated]"/></div><div className="border-2 border-border p-3 text-[8px] text-muted-foreground"><b className="text-primary">LOCKED CONTRACT</b><p className="mt-3 leading-loose">WORLD DISPLAY: {spec.w} × {spec.h} PX<br/>ANCHOR: BOTTOM CENTER<br/>SCALE: LOCKED<br/>SMOOTHING: OFF<br/>BACKGROUND: TRANSPARENT</p><p className="mt-4 text-accent">✓ READY FOR LIBRARY</p></div></div>}</section>}</div></div>}</section></main>
 }
