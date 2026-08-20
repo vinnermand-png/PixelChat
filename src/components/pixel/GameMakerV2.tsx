@@ -1,17 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { TH, TW, VIEW_H, VIEW_W, iso, unIso } from "@/components/pixel/world";
+import { ASSET_LIBRARY, getAsset } from "@/components/pixel/assets/assetLibrary";
+import type { AssetId, Cell } from "@/components/pixel/assets/types";
 
 type TerrainKey = "grass";
 type Tool = "paint" | "erase" | "erasePlatform" | "place" | "eraseObject" | "select" | "move";
 type BuildCategory = "terrain" | "objects" | "decorations" | "foundation";
 type EditorMode = "edit" | "play";
-type Cell = { gx: number; gy: number };
 type PlayerEntity = { gx: number; gy: number };
 type EdgeMaterial = "soil" | "rock" | "cliff";
-type AssetCategory = "nature" | "decoration";
-type AssetId = "testTree" | "testLargeTree";
-type CollisionDefinition = { enabled: boolean; footprint: Cell[] };
-type AssetDefinition = { id: AssetId; name: string; category: AssetCategory; collision: CollisionDefinition };
 type PlacedObject = { id: string; assetId: AssetId; gx: number; gy: number };
 type WorldData = { gridSize: number; terrain: Record<string, TerrainKey> };
 type FoundationSettings = { edgeMaterial: EdgeMaterial; edgeDepth: number };
@@ -28,14 +25,9 @@ const MAX_EDGE_DEPTH = 32;
 const EMPTY_HISTORY: HistoryState = { past: [], future: [] };
 const MAP_STORAGE_KEY = "pixelchat-game-maker-v2-map-v1";
 const DEFAULT_MAP_NAME = "Untitled Map";
-const ASSET_LIBRARY: readonly AssetDefinition[] = [
-  { id: "testTree", name: "Test Tree", category: "nature", collision: { enabled: true, footprint: [{ gx: 0, gy: 0 }] } },
-  { id: "testLargeTree", name: "Test Large Tree", category: "nature", collision: { enabled: true, footprint: [{ gx: 0, gy: 0 }, { gx: 1, gy: 0 }, { gx: 0, gy: 1 }, { gx: 1, gy: 1 }] } }
-];
 
 function cellKey(gx: number, gy: number) { return `${gx},${gy}`; }
 function inBounds(gx: number, gy: number, gridSize: number) { return gx >= 0 && gy >= 0 && gx < gridSize && gy < gridSize; }
-function getAsset(id: AssetId) { return ASSET_LIBRARY.find((asset) => asset.id === id); }
 function getObjectDepth(object: PlacedObject) { return object.gx + object.gy; }
 function getPlayerDepth(player: PlayerEntity) { return player.gx + player.gy; }
 function isCellBlocked(objects: PlacedObject[], gx: number, gy: number) { return objects.some((object) => { const collision = getAsset(object.assetId)?.collision; return Boolean(collision?.enabled && collision.footprint.some((offset) => object.gx + offset.gx === gx && object.gy + offset.gy === gy)); }); }
