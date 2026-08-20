@@ -59,7 +59,6 @@ export const Route = createFileRoute("/api/generate-asset")({
               prompt,
               size: "1024x1024",
               output_format: "png",
-              response_format: "b64_json",
             }),
           });
 
