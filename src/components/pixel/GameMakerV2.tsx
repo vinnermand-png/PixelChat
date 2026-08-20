@@ -2,33 +2,26 @@ import { useEffect, useRef, useState } from "react";
 import { TH, TW, VIEW_H, VIEW_W, iso, unIso } from "@/components/pixel/world";
 
 type TerrainKey = "grass";
-type Tool = "paint" | "erase";
+type Tool = "paint" | "erase" | "place" | "eraseObject";
 type Cell = { gx: number; gy: number };
 type EdgeMaterial = "soil" | "rock" | "cliff";
+type ObjectKey = "testTree";
+type PlacedObject = { id: string; asset: ObjectKey; gx: number; gy: number };
 type WorldData = {
   gridSize: number;
   terrain: Record<string, TerrainKey>;
 };
 
 const DEFAULT_GRID_SIZE = 14;
-const DEFAULT_WORLD: WorldData = {
-  gridSize: DEFAULT_GRID_SIZE,
-  terrain: {},
-};
-
+const DEFAULT_WORLD: WorldData = { gridSize: DEFAULT_GRID_SIZE, terrain: {} };
 const GRASS_COLOR = "#4f9d2d";
 const DEFAULT_EDGE_MATERIAL: EdgeMaterial = "soil";
 const DEFAULT_EDGE_DEPTH = 12;
 const MIN_EDGE_DEPTH = 4;
 const MAX_EDGE_DEPTH = 32;
 
-function cellKey(gx: number, gy: number) {
-  return `${gx},${gy}`;
-}
-
-function inBounds(gx: number, gy: number, gridSize: number) {
-  return gx >= 0 && gy >= 0 && gx < gridSize && gy < gridSize;
-}
+function cellKey(gx: number, gy: number) { return `${gx},${gy}`; }
+function inBounds(gx: number, gy: number, gridSize: number) { return gx >= 0 && gy >= 0 && gx < gridSize && gy < gridSize; }
 
 function traceDiamond(ctx: CanvasRenderingContext2D, gx: number, gy: number) {
   const p = iso(gx, gy);
@@ -42,23 +35,13 @@ function traceDiamond(ctx: CanvasRenderingContext2D, gx: number, gy: number) {
 
 function edgePalette(material: EdgeMaterial) {
   switch (material) {
-    case "rock":
-      return { right: "#5d6670", left: "#77818b" };
-    case "cliff":
-      return { right: "#55443a", left: "#6d594d" };
-    case "soil":
-    default:
-      return { right: "#74461f", left: "#9a6430" };
+    case "rock": return { right: "#5d6670", left: "#77818b" };
+    case "cliff": return { right: "#55443a", left: "#6d594d" };
+    default: return { right: "#74461f", left: "#9a6430" };
   }
 }
 
-function drawFoundationFace(
-  ctx: CanvasRenderingContext2D,
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-  color: string,
-  edgeDepth: number,
-) {
+function drawFoundationFace(ctx: CanvasRenderingContext2D, a: { x: number; y: number }, b: { x: number; y: number }, color: string, edgeDepth: number) {
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(a.x, a.y);
@@ -69,79 +52,80 @@ function drawFoundationFace(
   ctx.fill();
 }
 
-function drawFoundation(
-  ctx: CanvasRenderingContext2D,
-  terrain: Record<string, TerrainKey>,
-  gridSize: number,
-  edgeMaterial: EdgeMaterial,
-  edgeDepth: number,
-) {
-  const hasTerrain = (gx: number, gy: number) =>
-    inBounds(gx, gy, gridSize) && Boolean(terrain[cellKey(gx, gy)]);
+function drawFoundation(ctx: CanvasRenderingContext2D, terrain: Record<string, TerrainKey>, gridSize: number, edgeMaterial: EdgeMaterial, edgeDepth: number) {
+  const hasTerrain = (gx: number, gy: number) => inBounds(gx, gy, gridSize) && Boolean(terrain[cellKey(gx, gy)]);
   const palette = edgePalette(edgeMaterial);
-
-  for (let s = 0; s <= (gridSize - 1) * 2; s++) {
-    for (let gx = 0; gx < gridSize; gx++) {
-      const gy = s - gx;
-      if (!inBounds(gx, gy, gridSize) || !hasTerrain(gx, gy)) continue;
-
-      const p = iso(gx, gy);
-      const right = { x: p.x + TW / 2, y: p.y + TH / 2 };
-      const bottom = { x: p.x, y: p.y + TH };
-      const left = { x: p.x - TW / 2, y: p.y + TH / 2 };
-
-      if (!hasTerrain(gx + 1, gy)) {
-        drawFoundationFace(ctx, right, bottom, palette.right, edgeDepth);
-      }
-      if (!hasTerrain(gx, gy + 1)) {
-        drawFoundationFace(ctx, left, bottom, palette.left, edgeDepth);
-      }
-    }
+  for (let s = 0; s <= (gridSize - 1) * 2; s++) for (let gx = 0; gx < gridSize; gx++) {
+    const gy = s - gx;
+    if (!inBounds(gx, gy, gridSize) || !hasTerrain(gx, gy)) continue;
+    const p = iso(gx, gy);
+    const right = { x: p.x + TW / 2, y: p.y + TH / 2 };
+    const bottom = { x: p.x, y: p.y + TH };
+    const left = { x: p.x - TW / 2, y: p.y + TH / 2 };
+    if (!hasTerrain(gx + 1, gy)) drawFoundationFace(ctx, right, bottom, palette.right, edgeDepth);
+    if (!hasTerrain(gx, gy + 1)) drawFoundationFace(ctx, left, bottom, palette.left, edgeDepth);
   }
 }
 
-function drawTerrainSurface(
-  ctx: CanvasRenderingContext2D,
-  terrain: Record<string, TerrainKey>,
-  gridSize: number,
-) {
+function drawTerrainSurface(ctx: CanvasRenderingContext2D, terrain: Record<string, TerrainKey>, gridSize: number) {
   ctx.fillStyle = GRASS_COLOR;
   ctx.beginPath();
-
   let hasTerrain = false;
-  for (let s = 0; s <= (gridSize - 1) * 2; s++) {
-    for (let gx = 0; gx < gridSize; gx++) {
-      const gy = s - gx;
-      if (!inBounds(gx, gy, gridSize)) continue;
-      if (!terrain[cellKey(gx, gy)]) continue;
-
-      const p = iso(gx, gy);
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x + TW / 2, p.y + TH / 2);
-      ctx.lineTo(p.x, p.y + TH);
-      ctx.lineTo(p.x - TW / 2, p.y + TH / 2);
-      ctx.closePath();
-      hasTerrain = true;
-    }
+  for (let s = 0; s <= (gridSize - 1) * 2; s++) for (let gx = 0; gx < gridSize; gx++) {
+    const gy = s - gx;
+    if (!inBounds(gx, gy, gridSize) || !terrain[cellKey(gx, gy)]) continue;
+    const p = iso(gx, gy);
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(p.x + TW / 2, p.y + TH / 2);
+    ctx.lineTo(p.x, p.y + TH);
+    ctx.lineTo(p.x - TW / 2, p.y + TH / 2);
+    ctx.closePath();
+    hasTerrain = true;
   }
-
   if (hasTerrain) ctx.fill();
+}
+
+function drawTestTree(ctx: CanvasRenderingContext2D, gx: number, gy: number) {
+  const p = iso(gx, gy);
+  const cx = p.x;
+  const groundY = p.y + TH / 2;
+  ctx.save();
+  ctx.fillStyle = "#6b3f20";
+  ctx.fillRect(Math.round(cx - 3), Math.round(groundY - 20), 6, 20);
+  ctx.fillStyle = "#2f7d32";
+  ctx.beginPath();
+  ctx.moveTo(cx, groundY - 48);
+  ctx.lineTo(cx + 17, groundY - 20);
+  ctx.lineTo(cx - 17, groundY - 20);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#4f9d2d";
+  ctx.beginPath();
+  ctx.moveTo(cx, groundY - 43);
+  ctx.lineTo(cx + 12, groundY - 24);
+  ctx.lineTo(cx - 12, groundY - 24);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawObjects(ctx: CanvasRenderingContext2D, objects: PlacedObject[]) {
+  const ordered = [...objects].sort((a, b) => (a.gx + a.gy) - (b.gx + b.gy));
+  for (const object of ordered) {
+    if (object.asset === "testTree") drawTestTree(ctx, object.gx, object.gy);
+  }
 }
 
 function drawGridOverlay(ctx: CanvasRenderingContext2D, gridSize: number) {
   ctx.save();
   ctx.strokeStyle = "rgba(185, 205, 225, 0.55)";
   ctx.lineWidth = 1;
-
-  for (let s = 0; s <= (gridSize - 1) * 2; s++) {
-    for (let gx = 0; gx < gridSize; gx++) {
-      const gy = s - gx;
-      if (!inBounds(gx, gy, gridSize)) continue;
-      traceDiamond(ctx, gx, gy);
-      ctx.stroke();
-    }
+  for (let s = 0; s <= (gridSize - 1) * 2; s++) for (let gx = 0; gx < gridSize; gx++) {
+    const gy = s - gx;
+    if (!inBounds(gx, gy, gridSize)) continue;
+    traceDiamond(ctx, gx, gy);
+    ctx.stroke();
   }
-
   ctx.restore();
 }
 
@@ -159,24 +143,19 @@ function screenToCell(x: number, y: number, gridSize: number): Cell | null {
   const raw = unIso(x, y);
   const baseGx = Math.floor(raw.gx);
   const baseGy = Math.floor(raw.gy);
-
-  for (let gy = baseGy - 1; gy <= baseGy + 1; gy++) {
-    for (let gx = baseGx - 1; gx <= baseGx + 1; gx++) {
-      if (!inBounds(gx, gy, gridSize)) continue;
-      const p = iso(gx, gy);
-      const centerX = p.x;
-      const centerY = p.y + TH / 2;
-      const distance = Math.abs(x - centerX) / (TW / 2) + Math.abs(y - centerY) / (TH / 2);
-      if (distance <= 1) return { gx, gy };
-    }
+  for (let gy = baseGy - 1; gy <= baseGy + 1; gy++) for (let gx = baseGx - 1; gx <= baseGx + 1; gx++) {
+    if (!inBounds(gx, gy, gridSize)) continue;
+    const p = iso(gx, gy);
+    const distance = Math.abs(x - p.x) / (TW / 2) + Math.abs(y - (p.y + TH / 2)) / (TH / 2);
+    if (distance <= 1) return { gx, gy };
   }
-
   return null;
 }
 
 export default function GameMakerV2() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [world, setWorld] = useState<WorldData>(DEFAULT_WORLD);
+  const [objects, setObjects] = useState<PlacedObject[]>([]);
   const [tool, setTool] = useState<Tool>("paint");
   const [hover, setHover] = useState<Cell | null>(null);
   const [showGrid, setShowGrid] = useState(false);
@@ -188,116 +167,71 @@ export default function GameMakerV2() {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
     ctx.fillStyle = "#15202b";
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-
     drawFoundation(ctx, world.terrain, world.gridSize, edgeMaterial, edgeDepth);
     drawTerrainSurface(ctx, world.terrain, world.gridSize);
+    drawObjects(ctx, objects);
     if (showGrid) drawGridOverlay(ctx, world.gridSize);
     drawHover(ctx, hover);
-  }, [world, hover, showGrid, edgeMaterial, edgeDepth]);
+  }, [world, objects, hover, showGrid, edgeMaterial, edgeDepth]);
 
   function getCell(event: React.PointerEvent<HTMLCanvasElement>): Cell | null {
-    const canvas = event.currentTarget;
-    const rect = canvas.getBoundingClientRect();
+    const rect = event.currentTarget.getBoundingClientRect();
     const x = ((event.clientX - rect.left) / rect.width) * VIEW_W;
     const y = ((event.clientY - rect.top) / rect.height) * VIEW_H;
     return screenToCell(x, y, world.gridSize);
   }
 
-  function paint(cell: Cell) {
+  function handleCell(cell: Cell) {
     const key = cellKey(cell.gx, cell.gy);
-    setWorld((current) => {
-      const terrain = { ...current.terrain };
-      if (tool === "paint") terrain[key] = "grass";
-      else delete terrain[key];
-      return { ...current, terrain };
-    });
+    if (tool === "paint" || tool === "erase") {
+      setWorld((current) => {
+        const terrain = { ...current.terrain };
+        if (tool === "paint") terrain[key] = "grass";
+        else delete terrain[key];
+        return { ...current, terrain };
+      });
+      return;
+    }
+    if (!world.terrain[key]) return;
+    if (tool === "place") {
+      setObjects((current) => {
+        if (current.some((object) => object.gx === cell.gx && object.gy === cell.gy)) return current;
+        return [...current, { id: `${Date.now()}-${cell.gx}-${cell.gy}`, asset: "testTree", gx: cell.gx, gy: cell.gy }];
+      });
+      return;
+    }
+    setObjects((current) => current.filter((object) => !(object.gx === cell.gx && object.gy === cell.gy)));
   }
 
-  function clearWorld() {
-    setWorld((current) => ({ ...current, terrain: {} }));
-  }
+  function clearWorld() { setWorld((current) => ({ ...current, terrain: {} })); setObjects([]); }
 
   return (
     <main style={{ maxWidth: 1120, margin: "0 auto", padding: 24, color: "#e8eef7" }}>
       <header style={{ marginBottom: 18 }}>
         <div style={{ color: "#7f95aa", fontSize: 12, letterSpacing: 2 }}>PIXELCHAT · GAME MAKER V2</div>
-        <h1 style={{ margin: "6px 0 8px" }}>STEP 5 — FOUNDATION SETTINGS</h1>
-        <p style={{ margin: 0, color: "#9fb0c2" }}>
-          Foundation material and depth are configurable independently from the grass terrain. Perimeter detection and terrain rendering remain unchanged.
-        </p>
+        <h1 style={{ margin: "6px 0 8px" }}>STEP 6 — OBJECT SYSTEM</h1>
+        <p style={{ margin: 0, color: "#9fb0c2" }}>Objects are separate world data. PLACE and ERASE OBJECT only affect placed objects, never terrain or foundation.</p>
       </header>
-
       <section style={{ display: "grid", gridTemplateColumns: "220px minmax(0, 1fr)", gap: 18 }}>
         <aside style={{ border: "1px solid #33475c", background: "#101820", padding: 14 }}>
-          <h2 style={{ fontSize: 14, marginTop: 0 }}>TOOLS</h2>
-          <button onClick={() => setTool("paint")} style={{ width: "100%", marginBottom: 8, padding: 10, fontWeight: tool === "paint" ? 800 : 400 }}>
-            PAINT GRASS
-          </button>
-          <button onClick={() => setTool("erase")} style={{ width: "100%", marginBottom: 8, padding: 10, fontWeight: tool === "erase" ? 800 : 400 }}>
-            ERASE CELL
-          </button>
-          <button
-            onClick={() => setShowGrid((current) => !current)}
-            style={{ width: "100%", marginBottom: 16, padding: 10, fontWeight: 800 }}
-          >
-            GRID · {showGrid ? "ON" : "OFF"}
-          </button>
+          <h2 style={{ fontSize: 14, marginTop: 0 }}>TERRAIN TOOLS</h2>
+          <button onClick={() => setTool("paint")} style={{ width: "100%", marginBottom: 8, padding: 10, fontWeight: tool === "paint" ? 800 : 400 }}>PAINT GRASS</button>
+          <button onClick={() => setTool("erase")} style={{ width: "100%", marginBottom: 16, padding: 10, fontWeight: tool === "erase" ? 800 : 400 }}>ERASE CELL</button>
+          <h2 style={{ fontSize: 14 }}>OBJECT TOOLS</h2>
+          <button onClick={() => setTool("place")} style={{ width: "100%", marginBottom: 8, padding: 10, fontWeight: tool === "place" ? 800 : 400 }}>PLACE TEST TREE</button>
+          <button onClick={() => setTool("eraseObject")} style={{ width: "100%", marginBottom: 16, padding: 10, fontWeight: tool === "eraseObject" ? 800 : 400 }}>ERASE OBJECT</button>
+          <button onClick={() => setShowGrid((current) => !current)} style={{ width: "100%", marginBottom: 16, padding: 10, fontWeight: 800 }}>GRID · {showGrid ? "ON" : "OFF"}</button>
           <button onClick={clearWorld} style={{ width: "100%", padding: 10 }}>CLEAR WORLD</button>
-
           <h2 style={{ fontSize: 14, marginTop: 24 }}>FOUNDATION</h2>
-          <div style={{ display: "grid", gap: 8 }}>
-            {(["soil", "rock", "cliff"] as EdgeMaterial[]).map((material) => (
-              <button
-                key={material}
-                onClick={() => setEdgeMaterial(material)}
-                style={{ width: "100%", padding: 10, fontWeight: edgeMaterial === material ? 800 : 400 }}
-              >
-                {material.toUpperCase()}
-              </button>
-            ))}
-          </div>
-
-          <label style={{ display: "block", marginTop: 16, color: "#9fb0c2", fontSize: 13 }}>
-            FOUNDATION DEPTH · {edgeDepth}px
-            <input
-              type="range"
-              min={MIN_EDGE_DEPTH}
-              max={MAX_EDGE_DEPTH}
-              value={edgeDepth}
-              onChange={(event) => setEdgeDepth(Number(event.target.value))}
-              style={{ width: "100%", marginTop: 8 }}
-            />
-          </label>
-
-          <div style={{ marginTop: 22, color: "#9fb0c2", fontSize: 13, lineHeight: 1.6 }}>
-            <div><b>GRID DATA:</b> {world.gridSize} × {world.gridSize}</div>
-            <div><b>GRID OVERLAY:</b> {showGrid ? "ON" : "OFF"}</div>
-            <div><b>FOUNDATION:</b> {edgeMaterial.toUpperCase()} · {edgeDepth}px</div>
-            <div><b>TERRAIN CELLS:</b> {Object.keys(world.terrain).length}</div>
-            <div><b>TOOL:</b> {tool.toUpperCase()}</div>
-            <div><b>HOVER:</b> {hover ? `${hover.gx}, ${hover.gy}` : "OUTSIDE WORLD"}</div>
-          </div>
+          {(["soil", "rock", "cliff"] as EdgeMaterial[]).map((material) => <button key={material} onClick={() => setEdgeMaterial(material)} style={{ width: "100%", marginBottom: 8, padding: 10, fontWeight: edgeMaterial === material ? 800 : 400 }}>{material.toUpperCase()}</button>)}
+          <label style={{ display: "block", marginTop: 8, color: "#9fb0c2", fontSize: 13 }}>FOUNDATION DEPTH · {edgeDepth}px<input type="range" min={MIN_EDGE_DEPTH} max={MAX_EDGE_DEPTH} value={edgeDepth} onChange={(event) => setEdgeDepth(Number(event.target.value))} style={{ width: "100%", marginTop: 8 }} /></label>
+          <div style={{ marginTop: 22, color: "#9fb0c2", fontSize: 13, lineHeight: 1.6 }}><div><b>TERRAIN CELLS:</b> {Object.keys(world.terrain).length}</div><div><b>OBJECTS:</b> {objects.length}</div><div><b>TOOL:</b> {tool.toUpperCase()}</div><div><b>HOVER:</b> {hover ? `${hover.gx}, ${hover.gy}` : "OUTSIDE WORLD"}</div></div>
         </aside>
-
-        <section style={{ border: "1px solid #33475c", background: "#0b1118", padding: 12 }}>
-          <canvas
-            ref={canvasRef}
-            width={VIEW_W}
-            height={VIEW_H}
-            onPointerMove={(event) => setHover(getCell(event))}
-            onPointerLeave={() => setHover(null)}
-            onPointerDown={(event) => {
-              const cell = getCell(event);
-              if (cell) paint(cell);
-            }}
-            style={{ width: "100%", height: "auto", display: "block", cursor: "crosshair", imageRendering: "pixelated", touchAction: "none" }}
-          />
-        </section>
+        <section style={{ border: "1px solid #33475c", background: "#0b1118", padding: 12 }}><canvas ref={canvasRef} width={VIEW_W} height={VIEW_H} onPointerMove={(event) => setHover(getCell(event))} onPointerLeave={() => setHover(null)} onPointerDown={(event) => { const cell = getCell(event); if (cell) handleCell(cell); }} style={{ width: "100%", height: "auto", display: "block", cursor: "crosshair", imageRendering: "pixelated", touchAction: "none" }} /></section>
       </section>
     </main>
   );
