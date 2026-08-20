@@ -4,24 +4,23 @@ import type { TerrainVisualState } from "./terrainNeighbors";
 /**
  * Central registry for future terrain PNG sprite paths.
  *
- * STEP 34 intentionally does not load or render sprites. The registry only
- * resolves a terrainId + visualState pair to an optional sprite path so the
- * future terrain sprite pipeline has a single source of truth.
+ * STEP 35 keeps both registry keys on the existing central TerrainAssetId and
+ * TerrainVisualState unions, so invalid terrain IDs or visual states cannot be
+ * added to the registry without a TypeScript error.
  */
 export type TerrainSpriteRegistry = Partial<
   Record<TerrainAssetId, Partial<Record<TerrainVisualState, string>>>
 >;
 
-export const TERRAIN_SPRITE_REGISTRY: TerrainSpriteRegistry = {
+export const TERRAIN_SPRITE_REGISTRY = {
   grass: {
     center: "/assets/pixelchat/terrain/grass/center.png",
   },
-};
+} satisfies TerrainSpriteRegistry;
 
 /**
- * Returns the registered sprite path for a terrain visual state.
- * Returns undefined when no PNG sprite is registered, allowing the existing
- * color renderer to remain the fallback until sprite rendering is added.
+ * Returns the registered sprite path for a valid terrain ID + visual state.
+ * Returns undefined when that valid combination has no registered PNG.
  */
 export function getTerrainSpritePath(
   terrainId: TerrainAssetId,
