@@ -1,7 +1,7 @@
 import type { AssetDefinition, AssetId } from "./types";
 
 const PIXELCHAT_ASSET_ROOT = "/assets/pixelchat";
-const TEST_TREE_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAwCAYAAABwrHhvAAABCUlEQVR4nGNgGAUjHTCSqiF/n/1/bOITnQ6SbBYDAwMDC7EK9WuNsFqMS/5i8zmiHMRErANoBQbcAURFgf9c3f8MDL/xqlFQ+M3w4AEryQ4Y/CEASVwI3z+4/w6rOgVFIQYFRWQRSKIklBiJigIFRSEMMVwOIRUMeBQMXwcoKPxmUFD4Dc1BuAHWNECo1CMVwMzDliCJLooJAXITJU4HKCgQznqwggdZLalg+CbCUQeMOoBYQJVygJx2AEEHUGIoKWDAo2DUAQPuAIKdB0qrZkJtwsEfArhAlr0CSshMO/iALLMGPARGHTDqgFEHkJx3wwwk8ZaMqy48J8nMAQ+BUQeMOmDAHTDgAACPmkBMtKS70wAAAABJRU5ErkJggg==";
+const TEST_TREE_PNG = `${PIXELCHAT_ASSET_ROOT}/nature/trees/tree-01.png`;
 
 export const ASSET_LIBRARY: readonly AssetDefinition[] = [
   {
