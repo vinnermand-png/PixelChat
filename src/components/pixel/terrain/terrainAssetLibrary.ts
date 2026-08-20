@@ -1,24 +1,5 @@
 export type TerrainAssetId = "grass" | "dirt" | "snow" | "sand" | "stone";
 
-type TerrainVisualSprite = {
-  src: string;
-};
-
-type TerrainVisualThumbnail = {
-  src: string;
-};
-
-type TerrainVisual = {
-  /** Current renderer fallback kept for STEP 25 compatibility. */
-  surfaceColor: string;
-  /** Future-friendly semantic terrain top color. */
-  topColor: string;
-  /** Optional future terrain sprite source. */
-  sprite?: TerrainVisualSprite;
-  /** Optional future terrain thumbnail source. */
-  thumbnail?: TerrainVisualThumbnail;
-};
-
 export type TerrainAssetDefinition = {
   id: TerrainAssetId;
   name: string;
@@ -26,7 +7,20 @@ export type TerrainAssetDefinition = {
   thumbnail: {
     color: string;
   };
-  visual: TerrainVisual;
+  visual: {
+    /** Current STEP 25 renderer fallback. */
+    surfaceColor: string;
+    /** Optional future semantic terrain top color. */
+    topColor?: string;
+    /** Optional future PNG/sprite source. */
+    sprite?: {
+      src: string;
+    };
+    /** Optional future thumbnail source. */
+    thumbnail?: {
+      src: string;
+    };
+  };
 };
 
 export const TERRAIN_LIBRARY: TerrainAssetDefinition[] = [
@@ -35,35 +29,35 @@ export const TERRAIN_LIBRARY: TerrainAssetDefinition[] = [
     name: "Grass",
     category: "terrain",
     thumbnail: { color: "#4f9d2d" },
-    visual: { surfaceColor: "#4f9d2d", topColor: "#4f9d2d" },
+    visual: { surfaceColor: "#4f9d2d" },
   },
   {
     id: "dirt",
     name: "Dirt",
     category: "terrain",
     thumbnail: { color: "#8a5a32" },
-    visual: { surfaceColor: "#8a5a32", topColor: "#8a5a32" },
+    visual: { surfaceColor: "#8a5a32" },
   },
   {
     id: "snow",
     name: "Snow",
     category: "terrain",
     thumbnail: { color: "#e8f3ff" },
-    visual: { surfaceColor: "#f3f6f8", topColor: "#f3f6f8" },
+    visual: { surfaceColor: "#f3f6f8" },
   },
   {
     id: "sand",
     name: "Sand",
     category: "terrain",
     thumbnail: { color: "#d9b96e" },
-    visual: { surfaceColor: "#d8b36a", topColor: "#d8b36a" },
+    visual: { surfaceColor: "#d8b36a" },
   },
   {
     id: "stone",
     name: "Stone",
     category: "terrain",
     thumbnail: { color: "#7b8794" },
-    visual: { surfaceColor: "#7c858d", topColor: "#7c858d" },
+    visual: { surfaceColor: "#7c858d" },
   },
 ];
 
