@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import PlatformLandscape from "@/components/pixel/PlatformLandscape";
+import GameMaker from "@/components/pixel/GameMaker";
 
 export const Route = createFileRoute("/game-maker")({
   head: () => ({
@@ -11,5 +11,5 @@ export const Route = createFileRoute("/game-maker")({
       },
     ],
   }),
-  component: PlatformLandscape,
+  component: GameMaker,
 });
