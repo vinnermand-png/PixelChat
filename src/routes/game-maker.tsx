@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import GameCreationDialog from "@/components/pixel/GameCreationDialog";
+import GameFoundationInspector from "@/components/pixel/GameFoundationInspector";
 import GameMakerV2 from "@/components/pixel/GameMakerV2";
 import type { GameFoundation } from "@/lib/gameFoundation/gameFoundation";
 
 function GameMakerRoute() {
   const [isCreateGameOpen, setIsCreateGameOpen] = useState(false);
+  const [isFoundationInspectorOpen, setIsFoundationInspectorOpen] =
+    useState(false);
   const [activeFoundation, setActiveFoundation] =
     useState<GameFoundation | null>(null);
 
@@ -17,13 +20,22 @@ function GameMakerRoute() {
             ? `Game: ${activeFoundation.game.name}`
             : "No Game Selected"}
         </div>
-        <button
-          type="button"
-          onClick={() => setIsCreateGameOpen(true)}
-          className="rounded border border-[#a9df5a] px-3 py-2 text-xs font-semibold text-[#a9df5a]"
-        >
-          CREATE GAME
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsFoundationInspectorOpen(true)}
+            className="rounded border border-[#6ee7d8] px-3 py-2 text-xs font-semibold text-[#6ee7d8]"
+          >
+            GAME FOUNDATION
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsCreateGameOpen(true)}
+            className="rounded border border-[#a9df5a] px-3 py-2 text-xs font-semibold text-[#a9df5a]"
+          >
+            CREATE GAME
+          </button>
+        </div>
       </div>
 
       <GameMakerV2 />
@@ -36,6 +48,15 @@ function GameMakerRoute() {
               setActiveFoundation(foundation);
               setIsCreateGameOpen(false);
             }}
+          />
+        </div>
+      ) : null}
+
+      {isFoundationInspectorOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <GameFoundationInspector
+            foundation={activeFoundation}
+            onClose={() => setIsFoundationInspectorOpen(false)}
           />
         </div>
       ) : null}
