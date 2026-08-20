@@ -1,15 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import GameMaker from "@/components/pixel/GameMaker";
+import GameMakerV2 from "@/components/pixel/GameMakerV2";
 
 export const Route = createFileRoute("/game-maker")({
   head: () => ({
     meta: [
-      { title: "PixelGame Maker — PixelChat" },
+      { title: "PixelChat Game Maker V2" },
       {
         name: "description",
-        content: "PixelChat isometric world and asset editor.",
+        content: "PixelChat isometric world editor V2.",
       },
     ],
   }),
-  component: GameMaker,
+  component: GameMakerV2,
 });
