@@ -1,6 +1,7 @@
 export type Cell = { gx: number; gy: number };
 
-export type AssetCategory = "nature" | "decoration";
+export const ASSET_CATEGORIES = ["trees", "bushes", "rocks", "decorations", "buildings", "characters"] as const;
+export type AssetCategory = typeof ASSET_CATEGORIES[number];
 export type AssetId = string;
 
 export type CollisionDefinition = {
