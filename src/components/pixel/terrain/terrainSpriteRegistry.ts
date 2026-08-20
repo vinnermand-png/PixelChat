@@ -31,6 +31,14 @@ export const TERRAIN_VISUAL_STATES = [
 
 export type TerrainSpriteCoverage = Record<TerrainVisualState, boolean>;
 
+export type TerrainAssetStatus = {
+  terrainId: TerrainAssetId;
+  totalStates: number;
+  registeredSprites: number;
+  missingSprites: number;
+  complete: boolean;
+};
+
 export const TERRAIN_SPRITE_REGISTRY = {
   grass: {
     center: "/assets/pixelchat/terrain/grass/center.png",
@@ -56,10 +64,31 @@ export function getTerrainSpritePath(
 export function getTerrainSpriteCoverage(
   terrainId: TerrainAssetId,
 ): TerrainSpriteCoverage {
-  const registeredStates = TERRAIN_SPRITE_REGISTRY[terrainId];
-
   return TERRAIN_VISUAL_STATES.reduce<TerrainSpriteCoverage>((coverage, state) => {
-    coverage[state] = registeredStates?.[state] !== undefined;
+    coverage[state] = getTerrainSpritePath(terrainId, state) !== undefined;
     return coverage;
   }, {} as TerrainSpriteCoverage);
+}
+
+/**
+ * Returns central completeness information for one terrain asset without
+ * duplicating registry data.
+ */
+export function getTerrainAssetStatus(
+  terrainId: TerrainAssetId,
+): TerrainAssetStatus {
+  const registeredSprites = TERRAIN_VISUAL_STATES.reduce(
+    (count, state) => count + (getTerrainSpritePath(terrainId, state) ? 1 : 0),
+    0,
+  );
+  const totalStates = TERRAIN_VISUAL_STATES.length;
+  const missingSprites = totalStates - registeredSprites;
+
+  return {
+    terrainId,
+    totalStates,
+    registeredSprites,
+    missingSprites,
+    complete: missingSprites === 0,
+  };
 }
