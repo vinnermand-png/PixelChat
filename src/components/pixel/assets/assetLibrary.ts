@@ -24,6 +24,13 @@ export const ASSET_LIBRARY: readonly AssetDefinition[] = [
     id: "testLargeTree",
     name: "Test Large Tree",
     category: "trees",
+    sprite: {
+      src: TEST_TREE_PNG
+    },
+    render: {
+      bounds: { width: 32, height: 48 },
+      anchor: { x: 0.5, y: 1 }
+    },
     collision: {
       enabled: true,
       footprint: [
