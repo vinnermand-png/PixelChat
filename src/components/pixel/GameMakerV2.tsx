@@ -34,9 +34,6 @@ function traceDiamond(ctx: CanvasRenderingContext2D, gx: number, gy: number) {
   ctx.closePath();
 }
 
-// STEP 2: terrain cells remain individual data, but the surface is rendered
-// as one fill batch. Shared edges are never stroked, so adjacent cells have
-// no permanent seams or grid lines.
 function drawTerrainSurface(
   ctx: CanvasRenderingContext2D,
   terrain: Record<string, TerrainKey>,
@@ -65,13 +62,33 @@ function drawTerrainSurface(
   if (hasTerrain) ctx.fill();
 }
 
+// STEP 3: editor-only visual overlay. It reads world geometry but never
+// changes terrain data or terrain rendering.
+function drawGridOverlay(ctx: CanvasRenderingContext2D, gridSize: number) {
+  ctx.save();
+  ctx.strokeStyle = "rgba(185, 205, 225, 0.55)";
+  ctx.lineWidth = 1;
+
+  for (let s = 0; s <= (gridSize - 1) * 2; s++) {
+    for (let gx = 0; gx < gridSize; gx++) {
+      const gy = s - gx;
+      if (!inBounds(gx, gy, gridSize)) continue;
+      traceDiamond(ctx, gx, gy);
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
 function drawHover(ctx: CanvasRenderingContext2D, hover: Cell | null) {
   if (!hover) return;
-  const p = iso(hover.gx, hover.gy);
+  ctx.save();
   ctx.strokeStyle = "#f7d44a";
   ctx.lineWidth = 1;
   traceDiamond(ctx, hover.gx, hover.gy);
   ctx.stroke();
+  ctx.restore();
 }
 
 function screenToCell(x: number, y: number, gridSize: number): Cell | null {
@@ -98,6 +115,7 @@ export default function GameMakerV2() {
   const [world, setWorld] = useState<WorldData>(DEFAULT_WORLD);
   const [tool, setTool] = useState<Tool>("paint");
   const [hover, setHover] = useState<Cell | null>(null);
+  const [showGrid, setShowGrid] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -111,8 +129,9 @@ export default function GameMakerV2() {
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
     drawTerrainSurface(ctx, world.terrain, world.gridSize);
+    if (showGrid) drawGridOverlay(ctx, world.gridSize);
     drawHover(ctx, hover);
-  }, [world, hover]);
+  }, [world, hover, showGrid]);
 
   function getCell(event: React.PointerEvent<HTMLCanvasElement>): Cell | null {
     const canvas = event.currentTarget;
@@ -140,9 +159,9 @@ export default function GameMakerV2() {
     <main style={{ maxWidth: 1120, margin: "0 auto", padding: 24, color: "#e8eef7" }}>
       <header style={{ marginBottom: 18 }}>
         <div style={{ color: "#7f95aa", fontSize: 12, letterSpacing: 2 }}>PIXELCHAT · GAME MAKER V2</div>
-        <h1 style={{ margin: "6px 0 8px" }}>STEP 2 — TERRAIN SURFACE</h1>
+        <h1 style={{ margin: "6px 0 8px" }}>STEP 3 — GRID OVERLAY</h1>
         <p style={{ margin: 0, color: "#9fb0c2" }}>
-          Individual terrain cells in world data with one clean grass surface renderer. No foundation, objects or grid overlay yet.
+          STEP 1 and STEP 2 remain unchanged. The isometric grid is now a separate editor-only overlay and does not affect terrain data, terrain rendering or hover.
         </p>
       </header>
 
@@ -152,13 +171,20 @@ export default function GameMakerV2() {
           <button onClick={() => setTool("paint")} style={{ width: "100%", marginBottom: 8, padding: 10, fontWeight: tool === "paint" ? 800 : 400 }}>
             PAINT GRASS
           </button>
-          <button onClick={() => setTool("erase")} style={{ width: "100%", marginBottom: 16, padding: 10, fontWeight: tool === "erase" ? 800 : 400 }}>
+          <button onClick={() => setTool("erase")} style={{ width: "100%", marginBottom: 8, padding: 10, fontWeight: tool === "erase" ? 800 : 400 }}>
             ERASE CELL
+          </button>
+          <button
+            onClick={() => setShowGrid((current) => !current)}
+            style={{ width: "100%", marginBottom: 16, padding: 10, fontWeight: 800 }}
+          >
+            GRID · {showGrid ? "ON" : "OFF"}
           </button>
           <button onClick={clearWorld} style={{ width: "100%", padding: 10 }}>CLEAR WORLD</button>
 
           <div style={{ marginTop: 22, color: "#9fb0c2", fontSize: 13, lineHeight: 1.6 }}>
             <div><b>GRID DATA:</b> {world.gridSize} × {world.gridSize}</div>
+            <div><b>GRID OVERLAY:</b> {showGrid ? "ON" : "OFF"}</div>
             <div><b>TERRAIN CELLS:</b> {Object.keys(world.terrain).length}</div>
             <div><b>TOOL:</b> {tool.toUpperCase()}</div>
             <div><b>HOVER:</b> {hover ? `${hover.gx}, ${hover.gy}` : "OUTSIDE WORLD"}</div>
