@@ -3,6 +3,7 @@ import { TH, TW, VIEW_H, VIEW_W, iso, unIso } from "@/components/pixel/world";
 
 type TerrainKey = "grass";
 type Tool = "paint" | "erase" | "erasePlatform" | "place" | "eraseObject" | "select" | "move";
+type BuildCategory = "terrain" | "objects" | "decorations" | "foundation";
 type Cell = { gx: number; gy: number };
 type EdgeMaterial = "soil" | "rock" | "cliff";
 type AssetCategory = "nature" | "decoration";
@@ -65,6 +66,7 @@ export default function GameMakerV2() {
   const [mapName, setMapName] = useState(DEFAULT_MAP_NAME);
   const [mapStatus, setMapStatus] = useState("Not saved");
   const [tool, setTool] = useState<Tool>("paint");
+  const [activeCategory, setActiveCategory] = useState<BuildCategory>("terrain");
   const [hover, setHover] = useState<Cell | null>(null);
   const [showGrid, setShowGrid] = useState(false);
   const [edgeMaterial, setEdgeMaterial] = useState<EdgeMaterial>("soil");
@@ -85,68 +87,16 @@ export default function GameMakerV2() {
   function undo() { if (!history.past.length) return; const previous = history.past[history.past.length - 1]; const current = currentSnapshot(); setHistory({ past: history.past.slice(0, -1), future: [current, ...history.future] }); applySnapshot(previous); setMapStatus("Not saved"); }
   function redo() { if (!history.future.length) return; const next = history.future[0]; const current = currentSnapshot(); setHistory({ past: [...history.past, current], future: history.future.slice(1) }); applySnapshot(next); setMapStatus("Not saved"); }
   function currentMap(): PixelChatMapV1 { return cloneMap({ version: 1, id: mapId, name: mapName.trim() || DEFAULT_MAP_NAME, world, foundation: { edgeMaterial, edgeDepth }, objects }); }
-  function saveMap() {
-    const map = currentMap();
-    localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(map));
-    setMapId(map.id);
-    setMapName(map.name);
-    setMapStatus("Saved locally");
-  }
-  function loadMapData(map: PixelChatMapV1) {
-    const next = cloneMap(map);
-    setMapId(next.id);
-    setMapName(next.name);
-    setWorld(next.world);
-    setObjects(next.objects);
-    setEdgeMaterial(next.foundation.edgeMaterial);
-    setEdgeDepth(Math.max(MIN_EDGE_DEPTH, Math.min(MAX_EDGE_DEPTH, next.foundation.edgeDepth)));
-    setHistory(EMPTY_HISTORY);
-    setSelectedObjectId(null);
-    setHover(null);
-    setTool("paint");
-    setMapStatus("Loaded");
-  }
-  function loadSavedMap() {
-    const raw = localStorage.getItem(MAP_STORAGE_KEY);
-    if (!raw) { setMapStatus("No saved map found"); return; }
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (!isValidMap(parsed)) throw new Error("Invalid map");
-      loadMapData(parsed);
-    } catch {
-      setMapStatus("Saved map is invalid");
-    }
-  }
+  function saveMap() { const map = currentMap(); localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(map)); setMapId(map.id); setMapName(map.name); setMapStatus("Saved locally"); }
+  function loadMapData(map: PixelChatMapV1) { const next = cloneMap(map); setMapId(next.id); setMapName(next.name); setWorld(next.world); setObjects(next.objects); setEdgeMaterial(next.foundation.edgeMaterial); setEdgeDepth(Math.max(MIN_EDGE_DEPTH, Math.min(MAX_EDGE_DEPTH, next.foundation.edgeDepth))); setHistory(EMPTY_HISTORY); setSelectedObjectId(null); setHover(null); setTool("paint"); setMapStatus("Loaded"); }
+  function loadSavedMap() { const raw = localStorage.getItem(MAP_STORAGE_KEY); if (!raw) { setMapStatus("No saved map found"); return; } try { const parsed: unknown = JSON.parse(raw); if (!isValidMap(parsed)) throw new Error("Invalid map"); loadMapData(parsed); } catch { setMapStatus("Saved map is invalid"); } }
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey)) return;
-      if (event.key.toLowerCase() === "z") { event.preventDefault(); if (event.shiftKey) redo(); else undo(); }
-      else if (event.key.toLowerCase() === "y") { event.preventDefault(); redo(); }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [history, world, objects]);
-
-  function renderWorld(ctx: CanvasRenderingContext2D) {
-    drawFoundation(ctx, world.terrain, world.gridSize, edgeMaterial, edgeDepth);
-    drawTerrainSurface(ctx, world.terrain, world.gridSize);
-    drawObjects(ctx, objects);
-    if (showGrid) drawGridOverlay(ctx, world.gridSize);
-    drawSelection(ctx, selectedObject);
-    drawHover(ctx, hover);
-  }
-
+  useEffect(() => { const onKeyDown = (event: KeyboardEvent) => { if (!(event.ctrlKey || event.metaKey)) return; if (event.key.toLowerCase() === "z") { event.preventDefault(); if (event.shiftKey) redo(); else undo(); } else if (event.key.toLowerCase() === "y") { event.preventDefault(); redo(); } }; window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown); }, [history, world, objects]);
+  function renderWorld(ctx: CanvasRenderingContext2D) { drawFoundation(ctx, world.terrain, world.gridSize, edgeMaterial, edgeDepth); drawTerrainSurface(ctx, world.terrain, world.gridSize); drawObjects(ctx, objects); if (showGrid) drawGridOverlay(ctx, world.gridSize); drawSelection(ctx, selectedObject); drawHover(ctx, hover); }
   useEffect(() => { const canvas = canvasRef.current; if (!canvas) return; const ctx = canvas.getContext("2d"); if (!ctx) return; ctx.imageSmoothingEnabled = false; ctx.clearRect(0, 0, VIEW_W, VIEW_H); ctx.fillStyle = "#15202b"; ctx.fillRect(0, 0, VIEW_W, VIEW_H); renderWorld(ctx); }, [world, objects, hover, showGrid, edgeMaterial, edgeDepth, selectedObject]);
 
   function getCell(event: React.PointerEvent<HTMLCanvasElement>) { const rect = event.currentTarget.getBoundingClientRect(); return screenToCell(((event.clientX - rect.left) / rect.width) * VIEW_W, ((event.clientY - rect.top) / rect.height) * VIEW_H, world.gridSize); }
-  function erasePlatform(start: Cell) {
-    const startKey = cellKey(start.gx, start.gy);
-    if (!world.terrain[startKey]) return;
-    const terrain = { ...world.terrain }, visited = new Set<string>(), queue: Cell[] = [start];
-    while (queue.length) { const cell = queue.pop()!, key = cellKey(cell.gx, cell.gy); if (visited.has(key) || !terrain[key]) continue; visited.add(key); delete terrain[key]; for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) queue.push({ gx: cell.gx + dx, gy: cell.gy + dy }); }
-    commitChange({ ...world, terrain }, objects.filter((object) => !visited.has(cellKey(object.gx, object.gy))));
-  }
+  function erasePlatform(start: Cell) { const startKey = cellKey(start.gx, start.gy); if (!world.terrain[startKey]) return; const terrain = { ...world.terrain }, visited = new Set<string>(), queue: Cell[] = [start]; while (queue.length) { const cell = queue.pop()!, key = cellKey(cell.gx, cell.gy); if (visited.has(key) || !terrain[key]) continue; visited.add(key); delete terrain[key]; for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) queue.push({ gx: cell.gx + dx, gy: cell.gy + dy }); } commitChange({ ...world, terrain }, objects.filter((object) => !visited.has(cellKey(object.gx, object.gy)))); }
   function deleteSelectedObject() { if (!selectedObjectId) return; commitChange(world, objects.filter((object) => object.id !== selectedObjectId)); setTool("select"); }
   function handleCell(cell: Cell) {
     const key = cellKey(cell.gx, cell.gy);
@@ -159,8 +109,55 @@ export default function GameMakerV2() {
     if (tool === "place") { if (objects.some((object) => object.gx === cell.gx && object.gy === cell.gy)) return; commitChange(world, [...objects, { id: `${Date.now()}-${cell.gx}-${cell.gy}`, assetId: selectedAssetId, gx: cell.gx, gy: cell.gy }]); return; }
     if (tool === "eraseObject") { const nextObjects = objects.filter((object) => object.gx !== cell.gx || object.gy !== cell.gy); if (nextObjects.length !== objects.length) commitChange(world, nextObjects); }
   }
-  function clearWorld() { if (!Object.keys(world.terrain).length && !objects.length) return; commitChange({ ...world, terrain: {} }, []); setTool("paint"); }
-  const buttonStyle = (active = false) => ({ width: "100%", marginBottom: 8, padding: 10, fontWeight: active ? 800 : 400 });
+  function clearWorld() { if (!Object.keys(world.terrain).length && !objects.length) return; if (!window.confirm("Clear the entire world? This can be undone with Undo.")) return; commitChange({ ...world, terrain: {} }, []); setTool("paint"); setActiveCategory("terrain"); }
 
-  return <main style={{ maxWidth: 1120, margin: "0 auto", padding: 24, color: "#e8eef7" }}><header style={{ marginBottom: 18 }}><div style={{ color: "#7f95aa", fontSize: 12, letterSpacing: 2 }}>PIXELCHAT · GAME MAKER V2</div><h1 style={{ margin: "6px 0 8px" }}>STEP 12 — SAVE / LOAD MAPS</h1><p style={{ margin: 0, color: "#9fb0c2" }}>Map data stores world, foundation and objects. Editor state and history stay separate.</p></header><section style={{ display: "grid", gridTemplateColumns: "240px minmax(0, 1fr)", gap: 18 }}><aside style={{ border: "1px solid #33475c", background: "#101820", padding: 14 }}><h2 style={{ fontSize: 14, marginTop: 0 }}>MAP</h2><label style={{ display: "block", color: "#9fb0c2", fontSize: 12, marginBottom: 8 }}>MAP NAME<input value={mapName} onChange={(event) => { setMapName(event.target.value); setMapStatus("Not saved"); }} style={{ width: "100%", marginTop: 6, padding: 8, boxSizing: "border-box" }} /></label><div style={{ color: "#9fb0c2", fontSize: 12, marginBottom: 8 }}>ID: {mapId}</div><button onClick={saveMap} style={buttonStyle()}>SAVE MAP</button><button onClick={loadSavedMap} style={{ ...buttonStyle(), marginBottom: 16 }}>LOAD SAVED MAP</button><div style={{ color: "#9fb0c2", fontSize: 12, marginBottom: 16 }}>Status: {mapStatus}</div><h2 style={{ fontSize: 14, marginTop: 0 }}>HISTORY</h2><button disabled={!history.past.length} onClick={undo} style={buttonStyle()}>UNDO · CTRL+Z</button><button disabled={!history.future.length} onClick={redo} style={{ ...buttonStyle(), marginBottom: 16 }}>REDO · CTRL+Y</button><h2 style={{ fontSize: 14 }}>TERRAIN TOOLS</h2><button onClick={() => setTool("paint")} style={buttonStyle(tool === "paint")}>PAINT GRASS</button><button onClick={() => setTool("erase")} style={buttonStyle(tool === "erase")}>ERASE CELL</button><button onClick={() => setTool("erasePlatform")} style={{ ...buttonStyle(tool === "erasePlatform"), marginBottom: 16 }}>ERASE PLATFORM</button><h2 style={{ fontSize: 14 }}>ASSET LIBRARY</h2>{ASSET_LIBRARY.map((asset) => <button key={asset.id} onClick={() => { setSelectedAssetId(asset.id); setTool("place"); }} style={buttonStyle(selectedAssetId === asset.id && tool === "place")}>{asset.name.toUpperCase()}</button>)}<div style={{ color: "#9fb0c2", fontSize: 12, marginBottom: 12 }}>Selected: {getAsset(selectedAssetId)?.name}</div><h2 style={{ fontSize: 14 }}>OBJECT TOOLS</h2><button onClick={() => setTool("eraseObject")} style={buttonStyle(tool === "eraseObject")}>ERASE OBJECT</button><button onClick={() => setTool("select")} style={buttonStyle(tool === "select")}>SELECT OBJECT</button><button disabled={!selectedObject} onClick={() => setTool("move")} style={buttonStyle(tool === "move")}>MOVE SELECTED</button><button disabled={!selectedObject} onClick={deleteSelectedObject} style={{ ...buttonStyle(), marginBottom: 16 }}>DELETE SELECTED</button><button onClick={() => setShowGrid((current) => !current)} style={{ ...buttonStyle(), marginBottom: 16, fontWeight: 800 }}>GRID · {showGrid ? "ON" : "OFF"}</button><button onClick={clearWorld} style={{ ...buttonStyle(), marginBottom: 16 }}>CLEAR WORLD</button><h2 style={{ fontSize: 14 }}>FOUNDATION</h2>{(["soil","rock","cliff"] as EdgeMaterial[]).map((material) => <button key={material} onClick={() => { setEdgeMaterial(material); setMapStatus("Not saved"); }} style={buttonStyle(edgeMaterial === material)}>{material.toUpperCase()}</button>)}<label style={{ display: "block", marginTop: 8, color: "#9fb0c2", fontSize: 13 }}>FOUNDATION DEPTH · {edgeDepth}px<input type="range" min={MIN_EDGE_DEPTH} max={MAX_EDGE_DEPTH} value={edgeDepth} onChange={(event) => { setEdgeDepth(Number(event.target.value)); setMapStatus("Not saved"); }} style={{ width: "100%", marginTop: 8 }} /></label></aside><section style={{ border: "1px solid #33475c", background: "#101820", padding: 12 }}><canvas ref={canvasRef} width={VIEW_W} height={VIEW_H} onPointerMove={(event) => setHover(getCell(event))} onPointerLeave={() => setHover(null)} onPointerDown={(event) => { const cell = getCell(event); if (cell) handleCell(cell); }} style={{ width: "100%", height: "auto", display: "block", imageRendering: "pixelated", cursor: "crosshair" }} /><div style={{ marginTop: 10, color: "#9fb0c2", fontSize: 13 }}>History: {history.past.length} undo · {history.future.length} redo · Layer order: FOUNDATION → TERRAIN → OBJECTS → GRID OVERLAY → HOVER / SELECTION{selectedObject ? ` · Selected depth: ${getObjectDepth(selectedObject)}` : ""}</div></section></section></main>;
+  const panel = { border: "1px solid #2a3b4d", background: "#0d141c", borderRadius: 14, boxShadow: "0 10px 30px rgba(0,0,0,.16)" } as const;
+  const actionButton = (active = false) => ({ width: "100%", padding: "10px 12px", borderRadius: 9, border: active ? "1px solid #6ea8ff" : "1px solid #2a3b4d", background: active ? "#183150" : "#131e29", color: "#e8eef7", textAlign: "left" as const, cursor: "pointer", fontWeight: active ? 800 : 600 });
+  const iconButton = (active = false) => ({ padding: "9px 11px", borderRadius: 9, border: active ? "1px solid #6ea8ff" : "1px solid #2a3b4d", background: active ? "#183150" : "#131e29", color: "#e8eef7", cursor: "pointer", fontWeight: 700 });
+  const sectionTitle = { color: "#8fa4b9", fontSize: 11, letterSpacing: 1.4, fontWeight: 800, margin: "0 0 9px" } as const;
+  const terrainCount = Object.keys(world.terrain).length;
+
+  function selectTool(next: Tool, category: BuildCategory) { setTool(next); setActiveCategory(category); }
+  function renderBuildTools() {
+    if (activeCategory === "terrain") return <div style={{ display: "grid", gap: 8 }}><p style={sectionTitle}>TERRAIN TOOLS</p><button onClick={() => selectTool("paint", "terrain")} style={actionButton(tool === "paint")}>✏️ Paint Grass</button><button onClick={() => selectTool("erase", "terrain")} style={actionButton(tool === "erase")}>⌫ Erase Cell</button><button onClick={() => selectTool("erasePlatform", "terrain")} style={actionButton(tool === "erasePlatform")}>◩ Erase Platform</button></div>;
+    if (activeCategory === "foundation") return <div><p style={sectionTitle}>FOUNDATION</p><div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}><button onClick={() => { setEdgeMaterial("soil"); setMapStatus("Not saved"); }} style={actionButton(edgeMaterial === "soil")}>Soil</button><button onClick={() => { setEdgeMaterial("rock"); setMapStatus("Not saved"); }} style={actionButton(edgeMaterial === "rock")}>Rock</button><button onClick={() => { setEdgeMaterial("cliff"); setMapStatus("Not saved"); }} style={actionButton(edgeMaterial === "cliff")}>Cliff</button></div><label style={{ display: "block", marginTop: 16, color: "#c6d3df", fontSize: 13 }}>Depth <b style={{ float: "right" }}>{edgeDepth}px</b><input type="range" min={MIN_EDGE_DEPTH} max={MAX_EDGE_DEPTH} value={edgeDepth} onChange={(event) => { setEdgeDepth(Number(event.target.value)); setMapStatus("Not saved"); }} style={{ width: "100%", marginTop: 9 }} /></label></div>;
+    const assets = activeCategory === "decorations" ? ASSET_LIBRARY.filter((asset) => asset.category === "decoration") : ASSET_LIBRARY.filter((asset) => asset.category === "nature");
+    return <div style={{ display: "grid", gap: 14 }}><div><p style={sectionTitle}>ASSET LIBRARY</p>{assets.length ? <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>{assets.map((asset) => <button key={asset.id} onClick={() => { setSelectedAssetId(asset.id); setTool("place"); }} style={{ ...actionButton(selectedAssetId === asset.id && tool === "place"), minHeight: 92, textAlign: "center" }}><span style={{ display: "block", fontSize: 28, marginBottom: 8 }}>🌳</span>{asset.name}</button>)}</div> : <div style={{ color: "#8fa4b9", fontSize: 13 }}>No decoration assets yet.</div>}</div><div><p style={sectionTitle}>OBJECT TOOLS</p><div style={{ display: "grid", gap: 8 }}><button onClick={() => selectTool("select", activeCategory)} style={actionButton(tool === "select")}>◉ Select</button><button disabled={!selectedObject} onClick={() => selectTool("move", activeCategory)} style={{ ...actionButton(tool === "move"), opacity: selectedObject ? 1 : .45 }}>↔ Move Selected</button><button onClick={() => selectTool("eraseObject", activeCategory)} style={actionButton(tool === "eraseObject")}>⌫ Delete Object</button></div></div></div>;
+  }
+
+  return <main style={{ maxWidth: 1440, margin: "0 auto", padding: 18, color: "#e8eef7", fontFamily: "Inter, system-ui, sans-serif" }}>
+    <header style={{ ...panel, display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", marginBottom: 16, flexWrap: "wrap" }}>
+      <div style={{ minWidth: 220, padding: "0 8px" }}><div style={{ fontWeight: 900, letterSpacing: .4 }}>PIXELCHAT GAME MAKER</div><div style={{ color: "#7f95aa", fontSize: 11 }}>Map editor V2</div></div>
+      <input aria-label="Map name" value={mapName} onChange={(event) => { setMapName(event.target.value); setMapStatus("Not saved"); }} style={{ flex: "1 1 220px", minWidth: 180, padding: "10px 12px", borderRadius: 9, border: "1px solid #2a3b4d", background: "#111b25", color: "#e8eef7" }} />
+      <div style={{ color: mapStatus === "Saved locally" ? "#73d28d" : "#9fb0c2", fontSize: 12, whiteSpace: "nowrap" }}>● {mapStatus}</div>
+      <button disabled={!history.past.length} onClick={undo} style={{ ...iconButton(), opacity: history.past.length ? 1 : .45 }}>↶ Undo</button>
+      <button disabled={!history.future.length} onClick={redo} style={{ ...iconButton(), opacity: history.future.length ? 1 : .45 }}>↷ Redo</button>
+      <button onClick={saveMap} style={iconButton(true)}>💾 Save</button>
+      <button onClick={loadSavedMap} style={iconButton()}>📂 Load</button>
+    </header>
+
+    <section style={{ display: "grid", gridTemplateColumns: "220px minmax(0,1fr) 250px", gap: 16, alignItems: "start" }}>
+      <aside style={{ ...panel, padding: 12, position: "sticky", top: 12 }}>
+        <p style={sectionTitle}>BUILD TOOLS</p>
+        <div style={{ display: "grid", gap: 6, marginBottom: 16 }}>
+          <button onClick={() => setActiveCategory("terrain")} style={actionButton(activeCategory === "terrain")}>🌱 Terrain</button>
+          <button onClick={() => setActiveCategory("objects")} style={actionButton(activeCategory === "objects")}>🌳 Objects</button>
+          <button onClick={() => setActiveCategory("decorations")} style={actionButton(activeCategory === "decorations")}>✨ Decorations</button>
+          <button onClick={() => setActiveCategory("foundation")} style={actionButton(activeCategory === "foundation")}>🪨 Foundation</button>
+        </div>
+        <div style={{ borderTop: "1px solid #233242", paddingTop: 14 }}>{renderBuildTools()}</div>
+      </aside>
+
+      <section style={{ ...panel, padding: 12, minWidth: 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}><div><div style={{ fontWeight: 800 }}>WORLD CANVAS</div><div style={{ color: "#7f95aa", fontSize: 12 }}>Build your map directly on the terrain.</div></div><button onClick={() => setShowGrid((current) => !current)} style={iconButton(showGrid)}>▦ Grid {showGrid ? "On" : "Off"}</button></div>
+        <canvas ref={canvasRef} width={VIEW_W} height={VIEW_H} onPointerMove={(event) => setHover(getCell(event))} onPointerLeave={() => setHover(null)} onPointerDown={(event) => { const cell = getCell(event); if (cell) handleCell(cell); }} style={{ width: "100%", height: "auto", display: "block", imageRendering: "pixelated", cursor: "crosshair", borderRadius: 10, background: "#15202b" }} />
+        <div style={{ marginTop: 10, color: "#8fa4b9", fontSize: 12 }}>{terrainCount} terrain cells · {objects.length} objects · {showGrid ? "Grid visible" : "Clean canvas"}</div>
+      </section>
+
+      <aside style={{ ...panel, padding: 14, position: "sticky", top: 12 }}>
+        {selectedObject ? <><p style={sectionTitle}>OBJECT INSPECTOR</p><div style={{ fontWeight: 800, fontSize: 17 }}>{getAsset(selectedObject.assetId)?.name}</div><div style={{ color: "#8fa4b9", fontSize: 13, margin: "6px 0 14px" }}>Position: {selectedObject.gx}, {selectedObject.gy} · Depth: {getObjectDepth(selectedObject)}</div><div style={{ display: "grid", gap: 8 }}><button onClick={() => setTool("move")} style={actionButton(tool === "move")}>↔ Move Object</button><button onClick={deleteSelectedObject} style={actionButton(false)}>⌫ Delete Object</button></div></> : activeCategory === "foundation" ? <><p style={sectionTitle}>FOUNDATION SETTINGS</p><div style={{ color: "#c6d3df", fontSize: 14, marginBottom: 10 }}>Material: <b>{edgeMaterial}</b></div><div style={{ color: "#c6d3df", fontSize: 14 }}>Depth: <b>{edgeDepth}px</b></div></> : <><p style={sectionTitle}>MAP INSPECTOR</p><div style={{ display: "grid", gap: 10, color: "#c6d3df", fontSize: 13 }}><div><span style={{ color: "#7f95aa" }}>Map</span><br /><b>{mapName || DEFAULT_MAP_NAME}</b></div><div><span style={{ color: "#7f95aa" }}>Terrain</span><br /><b>{terrainCount} cells</b></div><div><span style={{ color: "#7f95aa" }}>Objects</span><br /><b>{objects.length}</b></div><div><span style={{ color: "#7f95aa" }}>Foundation</span><br /><b>{edgeMaterial} · {edgeDepth}px</b></div></div></>}
+        <div style={{ borderTop: "1px solid #233242", marginTop: 20, paddingTop: 16 }}><p style={sectionTitle}>WORLD ACTIONS</p><button onClick={clearWorld} style={{ ...actionButton(false), color: "#ffb4b4" }}>Clear World…</button><div style={{ color: "#71869a", fontSize: 11, marginTop: 7 }}>Requires confirmation. Undo remains available.</div></div>
+      </aside>
+    </section>
+  </main>;
 }
