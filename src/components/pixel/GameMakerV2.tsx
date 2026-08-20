@@ -4,6 +4,7 @@ import { TH, TW, VIEW_H, VIEW_W, iso, unIso } from "@/components/pixel/world";
 type TerrainKey = "grass";
 type Tool = "paint" | "erase";
 type Cell = { gx: number; gy: number };
+type EdgeMaterial = "soil" | "rock" | "cliff";
 type WorldData = {
   gridSize: number;
   terrain: Record<string, TerrainKey>;
@@ -15,13 +16,11 @@ const DEFAULT_WORLD: WorldData = {
   terrain: {},
 };
 
-// STEP 4: foundation is its own renderer and configuration.
-// It is intentionally independent from the top terrain material.
 const GRASS_COLOR = "#4f9d2d";
-const SOIL_COLOR = "#8b5a2b";
-const SOIL_RIGHT_SHADE = "#74461f";
-const SOIL_LEFT_SHADE = "#9a6430";
-const FOUNDATION_DEPTH = 12;
+const DEFAULT_EDGE_MATERIAL: EdgeMaterial = "soil";
+const DEFAULT_EDGE_DEPTH = 12;
+const MIN_EDGE_DEPTH = 4;
+const MAX_EDGE_DEPTH = 32;
 
 function cellKey(gx: number, gy: number) {
   return `${gx},${gy}`;
@@ -41,31 +40,45 @@ function traceDiamond(ctx: CanvasRenderingContext2D, gx: number, gy: number) {
   ctx.closePath();
 }
 
+function edgePalette(material: EdgeMaterial) {
+  switch (material) {
+    case "rock":
+      return { right: "#5d6670", left: "#77818b" };
+    case "cliff":
+      return { right: "#55443a", left: "#6d594d" };
+    case "soil":
+    default:
+      return { right: "#74461f", left: "#9a6430" };
+  }
+}
+
 function drawFoundationFace(
   ctx: CanvasRenderingContext2D,
   a: { x: number; y: number },
   b: { x: number; y: number },
   color: string,
+  edgeDepth: number,
 ) {
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(a.x, a.y);
   ctx.lineTo(b.x, b.y);
-  ctx.lineTo(b.x, b.y + FOUNDATION_DEPTH);
-  ctx.lineTo(a.x, a.y + FOUNDATION_DEPTH);
+  ctx.lineTo(b.x, b.y + edgeDepth);
+  ctx.lineTo(a.x, a.y + edgeDepth);
   ctx.closePath();
   ctx.fill();
 }
 
-// STEP 4: inspect terrain neighbours and draw foundation only where a
-// terrain cell meets empty space. Internal terrain-to-terrain borders are skipped.
 function drawFoundation(
   ctx: CanvasRenderingContext2D,
   terrain: Record<string, TerrainKey>,
   gridSize: number,
+  edgeMaterial: EdgeMaterial,
+  edgeDepth: number,
 ) {
   const hasTerrain = (gx: number, gy: number) =>
     inBounds(gx, gy, gridSize) && Boolean(terrain[cellKey(gx, gy)]);
+  const palette = edgePalette(edgeMaterial);
 
   for (let s = 0; s <= (gridSize - 1) * 2; s++) {
     for (let gx = 0; gx < gridSize; gx++) {
@@ -77,12 +90,11 @@ function drawFoundation(
       const bottom = { x: p.x, y: p.y + TH };
       const left = { x: p.x - TW / 2, y: p.y + TH / 2 };
 
-      // These are the two visible lower perimeter directions.
       if (!hasTerrain(gx + 1, gy)) {
-        drawFoundationFace(ctx, right, bottom, SOIL_RIGHT_SHADE);
+        drawFoundationFace(ctx, right, bottom, palette.right, edgeDepth);
       }
       if (!hasTerrain(gx, gy + 1)) {
-        drawFoundationFace(ctx, left, bottom, SOIL_LEFT_SHADE);
+        drawFoundationFace(ctx, left, bottom, palette.left, edgeDepth);
       }
     }
   }
@@ -116,7 +128,6 @@ function drawTerrainSurface(
   if (hasTerrain) ctx.fill();
 }
 
-// Editor-only visual overlay. It reads world geometry but never changes data.
 function drawGridOverlay(ctx: CanvasRenderingContext2D, gridSize: number) {
   ctx.save();
   ctx.strokeStyle = "rgba(185, 205, 225, 0.55)";
@@ -169,6 +180,8 @@ export default function GameMakerV2() {
   const [tool, setTool] = useState<Tool>("paint");
   const [hover, setHover] = useState<Cell | null>(null);
   const [showGrid, setShowGrid] = useState(false);
+  const [edgeMaterial, setEdgeMaterial] = useState<EdgeMaterial>(DEFAULT_EDGE_MATERIAL);
+  const [edgeDepth, setEdgeDepth] = useState(DEFAULT_EDGE_DEPTH);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -181,12 +194,11 @@ export default function GameMakerV2() {
     ctx.fillStyle = "#15202b";
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
-    // Fixed V2 render pipeline. Each layer owns only its own responsibility.
-    drawFoundation(ctx, world.terrain, world.gridSize);
+    drawFoundation(ctx, world.terrain, world.gridSize, edgeMaterial, edgeDepth);
     drawTerrainSurface(ctx, world.terrain, world.gridSize);
     if (showGrid) drawGridOverlay(ctx, world.gridSize);
     drawHover(ctx, hover);
-  }, [world, hover, showGrid]);
+  }, [world, hover, showGrid, edgeMaterial, edgeDepth]);
 
   function getCell(event: React.PointerEvent<HTMLCanvasElement>): Cell | null {
     const canvas = event.currentTarget;
@@ -214,9 +226,9 @@ export default function GameMakerV2() {
     <main style={{ maxWidth: 1120, margin: "0 auto", padding: 24, color: "#e8eef7" }}>
       <header style={{ marginBottom: 18 }}>
         <div style={{ color: "#7f95aa", fontSize: 12, letterSpacing: 2 }}>PIXELCHAT · GAME MAKER V2</div>
-        <h1 style={{ margin: "6px 0 8px" }}>STEP 4 — FOUNDATION SYSTEM</h1>
+        <h1 style={{ margin: "6px 0 8px" }}>STEP 5 — FOUNDATION SETTINGS</h1>
         <p style={{ margin: 0, color: "#9fb0c2" }}>
-          Soil foundation is rendered separately below the top terrain. Only outer terrain edges receive foundation faces; internal cell borders never do.
+          Foundation material and depth are configurable independently from the grass terrain. Perimeter detection and terrain rendering remain unchanged.
         </p>
       </header>
 
@@ -237,10 +249,35 @@ export default function GameMakerV2() {
           </button>
           <button onClick={clearWorld} style={{ width: "100%", padding: 10 }}>CLEAR WORLD</button>
 
+          <h2 style={{ fontSize: 14, marginTop: 24 }}>FOUNDATION</h2>
+          <div style={{ display: "grid", gap: 8 }}>
+            {(["soil", "rock", "cliff"] as EdgeMaterial[]).map((material) => (
+              <button
+                key={material}
+                onClick={() => setEdgeMaterial(material)}
+                style={{ width: "100%", padding: 10, fontWeight: edgeMaterial === material ? 800 : 400 }}
+              >
+                {material.toUpperCase()}
+              </button>
+            ))}
+          </div>
+
+          <label style={{ display: "block", marginTop: 16, color: "#9fb0c2", fontSize: 13 }}>
+            FOUNDATION DEPTH · {edgeDepth}px
+            <input
+              type="range"
+              min={MIN_EDGE_DEPTH}
+              max={MAX_EDGE_DEPTH}
+              value={edgeDepth}
+              onChange={(event) => setEdgeDepth(Number(event.target.value))}
+              style={{ width: "100%", marginTop: 8 }}
+            />
+          </label>
+
           <div style={{ marginTop: 22, color: "#9fb0c2", fontSize: 13, lineHeight: 1.6 }}>
             <div><b>GRID DATA:</b> {world.gridSize} × {world.gridSize}</div>
             <div><b>GRID OVERLAY:</b> {showGrid ? "ON" : "OFF"}</div>
-            <div><b>FOUNDATION:</b> SOIL · {FOUNDATION_DEPTH}px</div>
+            <div><b>FOUNDATION:</b> {edgeMaterial.toUpperCase()} · {edgeDepth}px</div>
             <div><b>TERRAIN CELLS:</b> {Object.keys(world.terrain).length}</div>
             <div><b>TOOL:</b> {tool.toUpperCase()}</div>
             <div><b>HOVER:</b> {hover ? `${hover.gx}, ${hover.gy}` : "OUTSIDE WORLD"}</div>
