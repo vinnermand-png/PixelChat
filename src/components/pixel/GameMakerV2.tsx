@@ -14,6 +14,7 @@ const DEFAULT_WORLD: WorldData = {
   gridSize: DEFAULT_GRID_SIZE,
   terrain: {},
 };
+const GRASS_COLOR = "#4f9d2d";
 
 function cellKey(gx: number, gy: number) {
   return `${gx},${gy}`;
@@ -23,36 +24,45 @@ function inBounds(gx: number, gy: number, gridSize: number) {
   return gx >= 0 && gy >= 0 && gx < gridSize && gy < gridSize;
 }
 
-function drawCellDiamond(
-  ctx: CanvasRenderingContext2D,
-  gx: number,
-  gy: number,
-  color: string,
-) {
+function traceDiamond(ctx: CanvasRenderingContext2D, gx: number, gy: number) {
   const p = iso(gx, gy);
-  ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(p.x, p.y);
   ctx.lineTo(p.x + TW / 2, p.y + TH / 2);
   ctx.lineTo(p.x, p.y + TH);
   ctx.lineTo(p.x - TW / 2, p.y + TH / 2);
   ctx.closePath();
-  ctx.fill();
 }
 
-function drawTerrain(
+// STEP 2: terrain cells remain individual data, but the surface is rendered
+// as one fill batch. Shared edges are never stroked, so adjacent cells have
+// no permanent seams or grid lines.
+function drawTerrainSurface(
   ctx: CanvasRenderingContext2D,
   terrain: Record<string, TerrainKey>,
   gridSize: number,
 ) {
+  ctx.fillStyle = GRASS_COLOR;
+  ctx.beginPath();
+
+  let hasTerrain = false;
   for (let s = 0; s <= (gridSize - 1) * 2; s++) {
     for (let gx = 0; gx < gridSize; gx++) {
       const gy = s - gx;
       if (!inBounds(gx, gy, gridSize)) continue;
       if (!terrain[cellKey(gx, gy)]) continue;
-      drawCellDiamond(ctx, gx, gy, "#4f9d2d");
+
+      const p = iso(gx, gy);
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + TW / 2, p.y + TH / 2);
+      ctx.lineTo(p.x, p.y + TH);
+      ctx.lineTo(p.x - TW / 2, p.y + TH / 2);
+      ctx.closePath();
+      hasTerrain = true;
     }
   }
+
+  if (hasTerrain) ctx.fill();
 }
 
 function drawHover(ctx: CanvasRenderingContext2D, hover: Cell | null) {
@@ -60,12 +70,7 @@ function drawHover(ctx: CanvasRenderingContext2D, hover: Cell | null) {
   const p = iso(hover.gx, hover.gy);
   ctx.strokeStyle = "#f7d44a";
   ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(Math.round(p.x), Math.round(p.y) + 0.5);
-  ctx.lineTo(Math.round(p.x + TW / 2), Math.round(p.y + TH / 2) + 0.5);
-  ctx.lineTo(Math.round(p.x), Math.round(p.y + TH) + 0.5);
-  ctx.lineTo(Math.round(p.x - TW / 2), Math.round(p.y + TH / 2) + 0.5);
-  ctx.closePath();
+  traceDiamond(ctx, hover.gx, hover.gy);
   ctx.stroke();
 }
 
@@ -74,8 +79,6 @@ function screenToCell(x: number, y: number, gridSize: number): Cell | null {
   const baseGx = Math.floor(raw.gx);
   const baseGy = Math.floor(raw.gy);
 
-  // Check the mathematically likely cell plus immediate neighbours and use
-  // the actual diamond hit test. This avoids incorrect picks around edges.
   for (let gy = baseGy - 1; gy <= baseGy + 1; gy++) {
     for (let gx = baseGx - 1; gx <= baseGx + 1; gx++) {
       if (!inBounds(gx, gy, gridSize)) continue;
@@ -107,7 +110,7 @@ export default function GameMakerV2() {
     ctx.fillStyle = "#15202b";
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
-    drawTerrain(ctx, world.terrain, world.gridSize);
+    drawTerrainSurface(ctx, world.terrain, world.gridSize);
     drawHover(ctx, hover);
   }, [world, hover]);
 
@@ -137,9 +140,9 @@ export default function GameMakerV2() {
     <main style={{ maxWidth: 1120, margin: "0 auto", padding: 24, color: "#e8eef7" }}>
       <header style={{ marginBottom: 18 }}>
         <div style={{ color: "#7f95aa", fontSize: 12, letterSpacing: 2 }}>PIXELCHAT · GAME MAKER V2</div>
-        <h1 style={{ margin: "6px 0 8px" }}>STEP 1 — WORLD FOUNDATION</h1>
+        <h1 style={{ margin: "6px 0 8px" }}>STEP 2 — TERRAIN SURFACE</h1>
         <p style={{ margin: 0, color: "#9fb0c2" }}>
-          Minimal world data, verified isometric cell picking, hover and terrain cell editing. No foundation, objects or grid overlay yet.
+          Individual terrain cells in world data with one clean grass surface renderer. No foundation, objects or grid overlay yet.
         </p>
       </header>
 
