@@ -10,10 +10,21 @@ export type CollisionDefinition = {
 
 export type AssetSpriteDefinition = {
   src: string;
+};
+
+export type AssetRenderBounds = {
   width: number;
   height: number;
-  anchorX: number;
-  anchorY: number;
+};
+
+export type AssetRenderAnchor = {
+  x: number;
+  y: number;
+};
+
+export type AssetRenderSettings = {
+  bounds: AssetRenderBounds;
+  anchor: AssetRenderAnchor;
 };
 
 export type AssetDefinition = {
@@ -21,5 +32,6 @@ export type AssetDefinition = {
   name: string;
   category: AssetCategory;
   sprite?: AssetSpriteDefinition;
+  render?: AssetRenderSettings;
   collision: CollisionDefinition;
 };
