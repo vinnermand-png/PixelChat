@@ -11,6 +11,8 @@ type AssetRenderOptions = { anchor: "cell-center" };
 type AssetDefinition = { id: AssetId; name: string; category: AssetCategory; image?: string; render: AssetRenderOptions };
 type PlacedObject = { id: string; assetId: AssetId; gx: number; gy: number };
 type WorldData = { gridSize: number; terrain: Record<string, TerrainKey> };
+type EditorSnapshot = { world: WorldData; objects: PlacedObject[] };
+type HistoryState = { past: EditorSnapshot[]; future: EditorSnapshot[] };
 
 const DEFAULT_GRID_SIZE = 14;
 const DEFAULT_WORLD: WorldData = { gridSize: DEFAULT_GRID_SIZE, terrain: {} };
@@ -18,7 +20,7 @@ const GRASS_COLOR = "#4f9d2d";
 const DEFAULT_EDGE_DEPTH = 12;
 const MIN_EDGE_DEPTH = 4;
 const MAX_EDGE_DEPTH = 32;
-
+const EMPTY_HISTORY: HistoryState = { past: [], future: [] };
 const ASSET_LIBRARY: readonly AssetDefinition[] = [
   { id: "testTree", name: "Test Tree", category: "nature", render: { anchor: "cell-center" } },
 ];
@@ -28,6 +30,7 @@ function inBounds(gx: number, gy: number, gridSize: number) { return gx >= 0 && 
 function getAsset(id: AssetId) { return ASSET_LIBRARY.find((asset) => asset.id === id); }
 function getObjectDepth(object: PlacedObject) { return object.gx + object.gy; }
 function compareObjectDepth(a: PlacedObject, b: PlacedObject) { return getObjectDepth(a) - getObjectDepth(b) || a.gy - b.gy || a.gx - b.gx || a.id.localeCompare(b.id); }
+function cloneSnapshot(snapshot: EditorSnapshot): EditorSnapshot { return { world: { ...snapshot.world, terrain: { ...snapshot.world.terrain } }, objects: snapshot.objects.map((object) => ({ ...object })) }; }
 function traceDiamond(ctx: CanvasRenderingContext2D, gx: number, gy: number) { const p = iso(gx, gy); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + TW / 2, p.y + TH / 2); ctx.lineTo(p.x, p.y + TH); ctx.lineTo(p.x - TW / 2, p.y + TH / 2); ctx.closePath(); }
 function edgePalette(material: EdgeMaterial) { switch (material) { case "rock": return { right: "#5d6670", left: "#77818b" }; case "cliff": return { right: "#55443a", left: "#6d594d" }; default: return { right: "#74461f", left: "#9a6430" }; } }
 function drawFoundationFace(ctx: CanvasRenderingContext2D, a: { x: number; y: number }, b: { x: number; y: number }, color: string, depth: number) { ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(b.x, b.y + depth); ctx.lineTo(a.x, a.y + depth); ctx.closePath(); ctx.fill(); }
@@ -45,6 +48,7 @@ export default function GameMakerV2() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [world, setWorld] = useState<WorldData>(DEFAULT_WORLD);
   const [objects, setObjects] = useState<PlacedObject[]>([]);
+  const [history, setHistory] = useState<HistoryState>(EMPTY_HISTORY);
   const [tool, setTool] = useState<Tool>("paint");
   const [hover, setHover] = useState<Cell | null>(null);
   const [showGrid, setShowGrid] = useState(false);
@@ -54,7 +58,28 @@ export default function GameMakerV2() {
   const [selectedAssetId, setSelectedAssetId] = useState<AssetId>(ASSET_LIBRARY[0].id);
   const selectedObject = selectedObjectId ? objects.find((object) => object.id === selectedObjectId) || null : null;
 
-  // STEP 10: Central render pipeline. Each layer owns only its own rendering responsibility.
+  function currentSnapshot(): EditorSnapshot { return cloneSnapshot({ world, objects }); }
+  function applySnapshot(snapshot: EditorSnapshot) { const next = cloneSnapshot(snapshot); setWorld(next.world); setObjects(next.objects); setSelectedObjectId(null); }
+  function commitChange(nextWorld: WorldData, nextObjects: PlacedObject[]) {
+    const previous = currentSnapshot();
+    const next = cloneSnapshot({ world: nextWorld, objects: nextObjects });
+    setHistory((current) => ({ past: [...current.past, previous], future: [] }));
+    applySnapshot(next);
+  }
+  function undo() { if (!history.past.length) return; const previous = history.past[history.past.length - 1]; const current = currentSnapshot(); setHistory({ past: history.past.slice(0, -1), future: [current, ...history.future] }); applySnapshot(previous); }
+  function redo() { if (!history.future.length) return; const next = history.future[0]; const current = currentSnapshot(); setHistory({ past: [...history.past, current], future: history.future.slice(1) }); applySnapshot(next); }
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.key.toLowerCase() === "z") { event.preventDefault(); if (event.shiftKey) redo(); else undo(); }
+      else if (event.key.toLowerCase() === "y") { event.preventDefault(); redo(); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [history, world, objects]);
+
+  // STEP 10: Central render pipeline. STEP 11 history never stores hover, selection, grid, or render state.
   function renderWorld(ctx: CanvasRenderingContext2D) {
     drawFoundation(ctx, world.terrain, world.gridSize, edgeMaterial, edgeDepth);
     drawTerrainSurface(ctx, world.terrain, world.gridSize);
@@ -67,11 +92,27 @@ export default function GameMakerV2() {
   useEffect(() => { const canvas = canvasRef.current; if (!canvas) return; const ctx = canvas.getContext("2d"); if (!ctx) return; ctx.imageSmoothingEnabled = false; ctx.clearRect(0, 0, VIEW_W, VIEW_H); ctx.fillStyle = "#15202b"; ctx.fillRect(0, 0, VIEW_W, VIEW_H); renderWorld(ctx); }, [world, objects, hover, showGrid, edgeMaterial, edgeDepth, selectedObject]);
 
   function getCell(event: React.PointerEvent<HTMLCanvasElement>) { const rect = event.currentTarget.getBoundingClientRect(); return screenToCell(((event.clientX - rect.left) / rect.width) * VIEW_W, ((event.clientY - rect.top) / rect.height) * VIEW_H, world.gridSize); }
-  function erasePlatform(start: Cell) { setWorld((current) => { const startKey = cellKey(start.gx, start.gy); if (!current.terrain[startKey]) return current; const terrain = { ...current.terrain }, visited = new Set<string>(), queue: Cell[] = [start]; while (queue.length) { const cell = queue.pop()!, key = cellKey(cell.gx, cell.gy); if (visited.has(key) || !terrain[key]) continue; visited.add(key); delete terrain[key]; for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) queue.push({ gx: cell.gx + dx, gy: cell.gy + dy }); } setObjects((currentObjects) => currentObjects.filter((object) => !visited.has(cellKey(object.gx, object.gy)))); if (selectedObject && visited.has(cellKey(selectedObject.gx, selectedObject.gy))) setSelectedObjectId(null); return { ...current, terrain }; }); }
-  function deleteSelectedObject() { if (!selectedObjectId) return; setObjects((current) => current.filter((object) => object.id !== selectedObjectId)); setSelectedObjectId(null); setTool("select"); }
-  function handleCell(cell: Cell) { const key = cellKey(cell.gx, cell.gy); if (tool === "paint") { setWorld((current) => ({ ...current, terrain: { ...current.terrain, [key]: "grass" } })); return; } if (tool === "erase") { setWorld((current) => { const terrain = { ...current.terrain }; delete terrain[key]; return { ...current, terrain }; }); setObjects((current) => current.filter((object) => object.gx !== cell.gx || object.gy !== cell.gy)); if (selectedObject?.gx === cell.gx && selectedObject?.gy === cell.gy) setSelectedObjectId(null); return; } if (tool === "erasePlatform") { erasePlatform(cell); return; } if (tool === "select") { const object = objects.find((current) => current.gx === cell.gx && current.gy === cell.gy); setSelectedObjectId(object?.id || null); return; } if (tool === "move") { if (!selectedObjectId || !world.terrain[key]) return; if (objects.some((object) => object.id !== selectedObjectId && object.gx === cell.gx && object.gy === cell.gy)) return; setObjects((current) => current.map((object) => object.id === selectedObjectId ? { ...object, gx: cell.gx, gy: cell.gy } : object)); setTool("select"); return; } if (!world.terrain[key]) return; if (tool === "place") { setObjects((current) => current.some((object) => object.gx === cell.gx && object.gy === cell.gy) ? current : [...current, { id: `${Date.now()}-${cell.gx}-${cell.gy}`, assetId: selectedAssetId, gx: cell.gx, gy: cell.gy }]); return; } setObjects((current) => current.filter((object) => object.gx !== cell.gx || object.gy !== cell.gy)); if (selectedObject?.gx === cell.gx && selectedObject?.gy === cell.gy) setSelectedObjectId(null); }
-  function clearWorld() { setWorld((current) => ({ ...current, terrain: {} })); setObjects([]); setSelectedObjectId(null); setTool("paint"); }
+  function erasePlatform(start: Cell) {
+    const startKey = cellKey(start.gx, start.gy);
+    if (!world.terrain[startKey]) return;
+    const terrain = { ...world.terrain }, visited = new Set<string>(), queue: Cell[] = [start];
+    while (queue.length) { const cell = queue.pop()!, key = cellKey(cell.gx, cell.gy); if (visited.has(key) || !terrain[key]) continue; visited.add(key); delete terrain[key]; for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) queue.push({ gx: cell.gx + dx, gy: cell.gy + dy }); }
+    commitChange({ ...world, terrain }, objects.filter((object) => !visited.has(cellKey(object.gx, object.gy))));
+  }
+  function deleteSelectedObject() { if (!selectedObjectId) return; commitChange(world, objects.filter((object) => object.id !== selectedObjectId)); setTool("select"); }
+  function handleCell(cell: Cell) {
+    const key = cellKey(cell.gx, cell.gy);
+    if (tool === "paint") { if (world.terrain[key]) return; commitChange({ ...world, terrain: { ...world.terrain, [key]: "grass" } }, objects); return; }
+    if (tool === "erase") { if (!world.terrain[key]) return; const terrain = { ...world.terrain }; delete terrain[key]; commitChange({ ...world, terrain }, objects.filter((object) => object.gx !== cell.gx || object.gy !== cell.gy)); return; }
+    if (tool === "erasePlatform") { erasePlatform(cell); return; }
+    if (tool === "select") { const object = objects.find((current) => current.gx === cell.gx && current.gy === cell.gy); setSelectedObjectId(object?.id || null); return; }
+    if (tool === "move") { if (!selectedObjectId || !world.terrain[key]) return; if (objects.some((object) => object.id !== selectedObjectId && object.gx === cell.gx && object.gy === cell.gy)) return; commitChange(world, objects.map((object) => object.id === selectedObjectId ? { ...object, gx: cell.gx, gy: cell.gy } : object)); setTool("select"); return; }
+    if (!world.terrain[key]) return;
+    if (tool === "place") { if (objects.some((object) => object.gx === cell.gx && object.gy === cell.gy)) return; commitChange(world, [...objects, { id: `${Date.now()}-${cell.gx}-${cell.gy}`, assetId: selectedAssetId, gx: cell.gx, gy: cell.gy }]); return; }
+    if (tool === "eraseObject") { const nextObjects = objects.filter((object) => object.gx !== cell.gx || object.gy !== cell.gy); if (nextObjects.length !== objects.length) commitChange(world, nextObjects); }
+  }
+  function clearWorld() { if (!Object.keys(world.terrain).length && !objects.length) return; commitChange({ ...world, terrain: {} }, []); setTool("paint"); }
   const buttonStyle = (active = false) => ({ width: "100%", marginBottom: 8, padding: 10, fontWeight: active ? 800 : 400 });
 
-  return <main style={{ maxWidth: 1120, margin: "0 auto", padding: 24, color: "#e8eef7" }}><header style={{ marginBottom: 18 }}><div style={{ color: "#7f95aa", fontSize: 12, letterSpacing: 2 }}>PIXELCHAT · GAME MAKER V2</div><h1 style={{ margin: "6px 0 8px" }}>STEP 10 — LAYERS & RENDER ORDER</h1><p style={{ margin: 0, color: "#9fb0c2" }}>Central render pipeline: FOUNDATION → TERRAIN → OBJECTS → GRID OVERLAY → HOVER / SELECTION.</p></header><section style={{ display: "grid", gridTemplateColumns: "240px minmax(0, 1fr)", gap: 18 }}><aside style={{ border: "1px solid #33475c", background: "#101820", padding: 14 }}><h2 style={{ fontSize: 14, marginTop: 0 }}>TERRAIN TOOLS</h2><button onClick={() => setTool("paint")} style={buttonStyle(tool === "paint")}>PAINT GRASS</button><button onClick={() => setTool("erase")} style={buttonStyle(tool === "erase")}>ERASE CELL</button><button onClick={() => setTool("erasePlatform")} style={{ ...buttonStyle(tool === "erasePlatform"), marginBottom: 16 }}>ERASE PLATFORM</button><h2 style={{ fontSize: 14 }}>ASSET LIBRARY</h2>{ASSET_LIBRARY.map((asset) => <button key={asset.id} onClick={() => { setSelectedAssetId(asset.id); setTool("place"); }} style={buttonStyle(selectedAssetId === asset.id && tool === "place")}>{asset.name.toUpperCase()}</button>)}<div style={{ color: "#9fb0c2", fontSize: 12, marginBottom: 12 }}>Selected: {getAsset(selectedAssetId)?.name}</div><h2 style={{ fontSize: 14 }}>OBJECT TOOLS</h2><button onClick={() => setTool("eraseObject")} style={buttonStyle(tool === "eraseObject")}>ERASE OBJECT</button><button onClick={() => setTool("select")} style={buttonStyle(tool === "select")}>SELECT OBJECT</button><button disabled={!selectedObject} onClick={() => setTool("move")} style={buttonStyle(tool === "move")}>MOVE SELECTED</button><button disabled={!selectedObject} onClick={deleteSelectedObject} style={{ ...buttonStyle(), marginBottom: 16 }}>DELETE SELECTED</button><button onClick={() => setShowGrid((current) => !current)} style={{ ...buttonStyle(), marginBottom: 16, fontWeight: 800 }}>GRID · {showGrid ? "ON" : "OFF"}</button><button onClick={clearWorld} style={{ ...buttonStyle(), marginBottom: 16 }}>CLEAR WORLD</button><h2 style={{ fontSize: 14 }}>FOUNDATION</h2>{(["soil","rock","cliff"] as EdgeMaterial[]).map((material) => <button key={material} onClick={() => setEdgeMaterial(material)} style={buttonStyle(edgeMaterial === material)}>{material.toUpperCase()}</button>)}<label style={{ display: "block", marginTop: 8, color: "#9fb0c2", fontSize: 13 }}>FOUNDATION DEPTH · {edgeDepth}px<input type="range" min={MIN_EDGE_DEPTH} max={MAX_EDGE_DEPTH} value={edgeDepth} onChange={(event) => setEdgeDepth(Number(event.target.value))} style={{ width: "100%", marginTop: 8 }} /></label></aside><section style={{ border: "1px solid #33475c", background: "#101820", padding: 12 }}><canvas ref={canvasRef} width={VIEW_W} height={VIEW_H} onPointerMove={(event) => setHover(getCell(event))} onPointerLeave={() => setHover(null)} onPointerDown={(event) => { const cell = getCell(event); if (cell) handleCell(cell); }} style={{ width: "100%", height: "auto", display: "block", imageRendering: "pixelated", cursor: "crosshair" }} /><div style={{ marginTop: 10, color: "#9fb0c2", fontSize: 13 }}>Layer order: FOUNDATION → TERRAIN → OBJECTS → GRID OVERLAY → HOVER / SELECTION{selectedObject ? ` · Selected depth: ${getObjectDepth(selectedObject)}` : ""}</div></section></section></main>;
+  return <main style={{ maxWidth: 1120, margin: "0 auto", padding: 24, color: "#e8eef7" }}><header style={{ marginBottom: 18 }}><div style={{ color: "#7f95aa", fontSize: 12, letterSpacing: 2 }}>PIXELCHAT · GAME MAKER V2</div><h1 style={{ margin: "6px 0 8px" }}>STEP 11 — UNDO / REDO</h1><p style={{ margin: 0, color: "#9fb0c2" }}>History tracks world-data and objects only. Render and editor overlay state stay outside history.</p></header><section style={{ display: "grid", gridTemplateColumns: "240px minmax(0, 1fr)", gap: 18 }}><aside style={{ border: "1px solid #33475c", background: "#101820", padding: 14 }}><h2 style={{ fontSize: 14, marginTop: 0 }}>HISTORY</h2><button disabled={!history.past.length} onClick={undo} style={buttonStyle()}>UNDO · CTRL+Z</button><button disabled={!history.future.length} onClick={redo} style={{ ...buttonStyle(), marginBottom: 16 }}>REDO · CTRL+Y</button><h2 style={{ fontSize: 14 }}>TERRAIN TOOLS</h2><button onClick={() => setTool("paint")} style={buttonStyle(tool === "paint")}>PAINT GRASS</button><button onClick={() => setTool("erase")} style={buttonStyle(tool === "erase")}>ERASE CELL</button><button onClick={() => setTool("erasePlatform")} style={{ ...buttonStyle(tool === "erasePlatform"), marginBottom: 16 }}>ERASE PLATFORM</button><h2 style={{ fontSize: 14 }}>ASSET LIBRARY</h2>{ASSET_LIBRARY.map((asset) => <button key={asset.id} onClick={() => { setSelectedAssetId(asset.id); setTool("place"); }} style={buttonStyle(selectedAssetId === asset.id && tool === "place")}>{asset.name.toUpperCase()}</button>)}<div style={{ color: "#9fb0c2", fontSize: 12, marginBottom: 12 }}>Selected: {getAsset(selectedAssetId)?.name}</div><h2 style={{ fontSize: 14 }}>OBJECT TOOLS</h2><button onClick={() => setTool("eraseObject")} style={buttonStyle(tool === "eraseObject")}>ERASE OBJECT</button><button onClick={() => setTool("select")} style={buttonStyle(tool === "select")}>SELECT OBJECT</button><button disabled={!selectedObject} onClick={() => setTool("move")} style={buttonStyle(tool === "move")}>MOVE SELECTED</button><button disabled={!selectedObject} onClick={deleteSelectedObject} style={{ ...buttonStyle(), marginBottom: 16 }}>DELETE SELECTED</button><button onClick={() => setShowGrid((current) => !current)} style={{ ...buttonStyle(), marginBottom: 16, fontWeight: 800 }}>GRID · {showGrid ? "ON" : "OFF"}</button><button onClick={clearWorld} style={{ ...buttonStyle(), marginBottom: 16 }}>CLEAR WORLD</button><h2 style={{ fontSize: 14 }}>FOUNDATION</h2>{(["soil","rock","cliff"] as EdgeMaterial[]).map((material) => <button key={material} onClick={() => setEdgeMaterial(material)} style={buttonStyle(edgeMaterial === material)}>{material.toUpperCase()}</button>)}<label style={{ display: "block", marginTop: 8, color: "#9fb0c2", fontSize: 13 }}>FOUNDATION DEPTH · {edgeDepth}px<input type="range" min={MIN_EDGE_DEPTH} max={MAX_EDGE_DEPTH} value={edgeDepth} onChange={(event) => setEdgeDepth(Number(event.target.value))} style={{ width: "100%", marginTop: 8 }} /></label></aside><section style={{ border: "1px solid #33475c", background: "#101820", padding: 12 }}><canvas ref={canvasRef} width={VIEW_W} height={VIEW_H} onPointerMove={(event) => setHover(getCell(event))} onPointerLeave={() => setHover(null)} onPointerDown={(event) => { const cell = getCell(event); if (cell) handleCell(cell); }} style={{ width: "100%", height: "auto", display: "block", imageRendering: "pixelated", cursor: "crosshair" }} /><div style={{ marginTop: 10, color: "#9fb0c2", fontSize: 13 }}>History: {history.past.length} undo · {history.future.length} redo · Layer order: FOUNDATION → TERRAIN → OBJECTS → GRID OVERLAY → HOVER / SELECTION{selectedObject ? ` · Selected depth: ${getObjectDepth(selectedObject)}` : ""}</div></section></section></main>;
 }
