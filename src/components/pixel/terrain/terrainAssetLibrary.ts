@@ -1,5 +1,19 @@
 export type TerrainAssetId = "grass" | "dirt" | "snow" | "sand" | "stone";
 
+type TerrainVisualSprite = {
+  src: string;
+};
+
+type TerrainVisualThumbnail = {
+  src: string;
+};
+
+type TerrainVisual = {
+  topColor: string;
+  sprite?: TerrainVisualSprite;
+  thumbnail?: TerrainVisualThumbnail;
+};
+
 export type TerrainAssetDefinition = {
   id: TerrainAssetId;
   name: string;
@@ -7,9 +21,7 @@ export type TerrainAssetDefinition = {
   thumbnail: {
     color: string;
   };
-  visual: {
-    surfaceColor: string;
-  };
+  visual: TerrainVisual;
 };
 
 export const TERRAIN_LIBRARY: TerrainAssetDefinition[] = [
@@ -18,35 +30,35 @@ export const TERRAIN_LIBRARY: TerrainAssetDefinition[] = [
     name: "Grass",
     category: "terrain",
     thumbnail: { color: "#4f9d2d" },
-    visual: { surfaceColor: "#4f9d2d" },
+    visual: { topColor: "#4f9d2d" },
   },
   {
     id: "dirt",
     name: "Dirt",
     category: "terrain",
     thumbnail: { color: "#8a5a32" },
-    visual: { surfaceColor: "#8a5a32" },
+    visual: { topColor: "#8a5a32" },
   },
   {
     id: "snow",
     name: "Snow",
     category: "terrain",
     thumbnail: { color: "#e8f3ff" },
-    visual: { surfaceColor: "#f3f6f8" },
+    visual: { topColor: "#f3f6f8" },
   },
   {
     id: "sand",
     name: "Sand",
     category: "terrain",
     thumbnail: { color: "#d9b96e" },
-    visual: { surfaceColor: "#d8b36a" },
+    visual: { topColor: "#d8b36a" },
   },
   {
     id: "stone",
     name: "Stone",
     category: "terrain",
     thumbnail: { color: "#7b8794" },
-    visual: { surfaceColor: "#7c858d" },
+    visual: { topColor: "#7c858d" },
   },
 ];
 
