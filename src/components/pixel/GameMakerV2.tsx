@@ -11,6 +11,8 @@ type AssetRenderOptions = { anchor: "cell-center" };
 type AssetDefinition = { id: AssetId; name: string; category: AssetCategory; image?: string; render: AssetRenderOptions };
 type PlacedObject = { id: string; assetId: AssetId; gx: number; gy: number };
 type WorldData = { gridSize: number; terrain: Record<string, TerrainKey> };
+type FoundationSettings = { edgeMaterial: EdgeMaterial; edgeDepth: number };
+type PixelChatMapV1 = { version: 1; id: string; name: string; world: WorldData; foundation: FoundationSettings; objects: PlacedObject[] };
 type EditorSnapshot = { world: WorldData; objects: PlacedObject[] };
 type HistoryState = { past: EditorSnapshot[]; future: EditorSnapshot[] };
 
@@ -21,6 +23,8 @@ const DEFAULT_EDGE_DEPTH = 12;
 const MIN_EDGE_DEPTH = 4;
 const MAX_EDGE_DEPTH = 32;
 const EMPTY_HISTORY: HistoryState = { past: [], future: [] };
+const MAP_STORAGE_KEY = "pixelchat-game-maker-v2-map-v1";
+const DEFAULT_MAP_NAME = "Untitled Map";
 const ASSET_LIBRARY: readonly AssetDefinition[] = [
   { id: "testTree", name: "Test Tree", category: "nature", render: { anchor: "cell-center" } },
 ];
@@ -31,6 +35,14 @@ function getAsset(id: AssetId) { return ASSET_LIBRARY.find((asset) => asset.id =
 function getObjectDepth(object: PlacedObject) { return object.gx + object.gy; }
 function compareObjectDepth(a: PlacedObject, b: PlacedObject) { return getObjectDepth(a) - getObjectDepth(b) || a.gy - b.gy || a.gx - b.gx || a.id.localeCompare(b.id); }
 function cloneSnapshot(snapshot: EditorSnapshot): EditorSnapshot { return { world: { ...snapshot.world, terrain: { ...snapshot.world.terrain } }, objects: snapshot.objects.map((object) => ({ ...object })) }; }
+function cloneMap(map: PixelChatMapV1): PixelChatMapV1 { return { version: 1, id: map.id, name: map.name, world: { ...map.world, terrain: { ...map.world.terrain } }, foundation: { ...map.foundation }, objects: map.objects.map((object) => ({ ...object })) }; }
+function createMapId() { return `map-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
+function isEdgeMaterial(value: unknown): value is EdgeMaterial { return value === "soil" || value === "rock" || value === "cliff"; }
+function isValidMap(data: unknown): data is PixelChatMapV1 {
+  if (!data || typeof data !== "object") return false;
+  const map = data as Partial<PixelChatMapV1>;
+  return map.version === 1 && typeof map.id === "string" && typeof map.name === "string" && Boolean(map.world) && typeof map.world?.gridSize === "number" && Boolean(map.world?.terrain) && typeof map.world.terrain === "object" && Boolean(map.foundation) && isEdgeMaterial(map.foundation?.edgeMaterial) && typeof map.foundation?.edgeDepth === "number" && Array.isArray(map.objects);
+}
 function traceDiamond(ctx: CanvasRenderingContext2D, gx: number, gy: number) { const p = iso(gx, gy); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + TW / 2, p.y + TH / 2); ctx.lineTo(p.x, p.y + TH); ctx.lineTo(p.x - TW / 2, p.y + TH / 2); ctx.closePath(); }
 function edgePalette(material: EdgeMaterial) { switch (material) { case "rock": return { right: "#5d6670", left: "#77818b" }; case "cliff": return { right: "#55443a", left: "#6d594d" }; default: return { right: "#74461f", left: "#9a6430" }; } }
 function drawFoundationFace(ctx: CanvasRenderingContext2D, a: { x: number; y: number }, b: { x: number; y: number }, color: string, depth: number) { ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(b.x, b.y + depth); ctx.lineTo(a.x, a.y + depth); ctx.closePath(); ctx.fill(); }
@@ -49,6 +61,9 @@ export default function GameMakerV2() {
   const [world, setWorld] = useState<WorldData>(DEFAULT_WORLD);
   const [objects, setObjects] = useState<PlacedObject[]>([]);
   const [history, setHistory] = useState<HistoryState>(EMPTY_HISTORY);
+  const [mapId, setMapId] = useState(createMapId);
+  const [mapName, setMapName] = useState(DEFAULT_MAP_NAME);
+  const [mapStatus, setMapStatus] = useState("Not saved");
   const [tool, setTool] = useState<Tool>("paint");
   const [hover, setHover] = useState<Cell | null>(null);
   const [showGrid, setShowGrid] = useState(false);
@@ -65,9 +80,43 @@ export default function GameMakerV2() {
     const next = cloneSnapshot({ world: nextWorld, objects: nextObjects });
     setHistory((current) => ({ past: [...current.past, previous], future: [] }));
     applySnapshot(next);
+    setMapStatus("Not saved");
   }
-  function undo() { if (!history.past.length) return; const previous = history.past[history.past.length - 1]; const current = currentSnapshot(); setHistory({ past: history.past.slice(0, -1), future: [current, ...history.future] }); applySnapshot(previous); }
-  function redo() { if (!history.future.length) return; const next = history.future[0]; const current = currentSnapshot(); setHistory({ past: [...history.past, current], future: history.future.slice(1) }); applySnapshot(next); }
+  function undo() { if (!history.past.length) return; const previous = history.past[history.past.length - 1]; const current = currentSnapshot(); setHistory({ past: history.past.slice(0, -1), future: [current, ...history.future] }); applySnapshot(previous); setMapStatus("Not saved"); }
+  function redo() { if (!history.future.length) return; const next = history.future[0]; const current = currentSnapshot(); setHistory({ past: [...history.past, current], future: history.future.slice(1) }); applySnapshot(next); setMapStatus("Not saved"); }
+  function currentMap(): PixelChatMapV1 { return cloneMap({ version: 1, id: mapId, name: mapName.trim() || DEFAULT_MAP_NAME, world, foundation: { edgeMaterial, edgeDepth }, objects }); }
+  function saveMap() {
+    const map = currentMap();
+    localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(map));
+    setMapId(map.id);
+    setMapName(map.name);
+    setMapStatus("Saved locally");
+  }
+  function loadMapData(map: PixelChatMapV1) {
+    const next = cloneMap(map);
+    setMapId(next.id);
+    setMapName(next.name);
+    setWorld(next.world);
+    setObjects(next.objects);
+    setEdgeMaterial(next.foundation.edgeMaterial);
+    setEdgeDepth(Math.max(MIN_EDGE_DEPTH, Math.min(MAX_EDGE_DEPTH, next.foundation.edgeDepth)));
+    setHistory(EMPTY_HISTORY);
+    setSelectedObjectId(null);
+    setHover(null);
+    setTool("paint");
+    setMapStatus("Loaded");
+  }
+  function loadSavedMap() {
+    const raw = localStorage.getItem(MAP_STORAGE_KEY);
+    if (!raw) { setMapStatus("No saved map found"); return; }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!isValidMap(parsed)) throw new Error("Invalid map");
+      loadMapData(parsed);
+    } catch {
+      setMapStatus("Saved map is invalid");
+    }
+  }
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -79,7 +128,6 @@ export default function GameMakerV2() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [history, world, objects]);
 
-  // STEP 10: Central render pipeline. STEP 11 history never stores hover, selection, grid, or render state.
   function renderWorld(ctx: CanvasRenderingContext2D) {
     drawFoundation(ctx, world.terrain, world.gridSize, edgeMaterial, edgeDepth);
     drawTerrainSurface(ctx, world.terrain, world.gridSize);
@@ -114,5 +162,5 @@ export default function GameMakerV2() {
   function clearWorld() { if (!Object.keys(world.terrain).length && !objects.length) return; commitChange({ ...world, terrain: {} }, []); setTool("paint"); }
   const buttonStyle = (active = false) => ({ width: "100%", marginBottom: 8, padding: 10, fontWeight: active ? 800 : 400 });
 
-  return <main style={{ maxWidth: 1120, margin: "0 auto", padding: 24, color: "#e8eef7" }}><header style={{ marginBottom: 18 }}><div style={{ color: "#7f95aa", fontSize: 12, letterSpacing: 2 }}>PIXELCHAT · GAME MAKER V2</div><h1 style={{ margin: "6px 0 8px" }}>STEP 11 — UNDO / REDO</h1><p style={{ margin: 0, color: "#9fb0c2" }}>History tracks world-data and objects only. Render and editor overlay state stay outside history.</p></header><section style={{ display: "grid", gridTemplateColumns: "240px minmax(0, 1fr)", gap: 18 }}><aside style={{ border: "1px solid #33475c", background: "#101820", padding: 14 }}><h2 style={{ fontSize: 14, marginTop: 0 }}>HISTORY</h2><button disabled={!history.past.length} onClick={undo} style={buttonStyle()}>UNDO · CTRL+Z</button><button disabled={!history.future.length} onClick={redo} style={{ ...buttonStyle(), marginBottom: 16 }}>REDO · CTRL+Y</button><h2 style={{ fontSize: 14 }}>TERRAIN TOOLS</h2><button onClick={() => setTool("paint")} style={buttonStyle(tool === "paint")}>PAINT GRASS</button><button onClick={() => setTool("erase")} style={buttonStyle(tool === "erase")}>ERASE CELL</button><button onClick={() => setTool("erasePlatform")} style={{ ...buttonStyle(tool === "erasePlatform"), marginBottom: 16 }}>ERASE PLATFORM</button><h2 style={{ fontSize: 14 }}>ASSET LIBRARY</h2>{ASSET_LIBRARY.map((asset) => <button key={asset.id} onClick={() => { setSelectedAssetId(asset.id); setTool("place"); }} style={buttonStyle(selectedAssetId === asset.id && tool === "place")}>{asset.name.toUpperCase()}</button>)}<div style={{ color: "#9fb0c2", fontSize: 12, marginBottom: 12 }}>Selected: {getAsset(selectedAssetId)?.name}</div><h2 style={{ fontSize: 14 }}>OBJECT TOOLS</h2><button onClick={() => setTool("eraseObject")} style={buttonStyle(tool === "eraseObject")}>ERASE OBJECT</button><button onClick={() => setTool("select")} style={buttonStyle(tool === "select")}>SELECT OBJECT</button><button disabled={!selectedObject} onClick={() => setTool("move")} style={buttonStyle(tool === "move")}>MOVE SELECTED</button><button disabled={!selectedObject} onClick={deleteSelectedObject} style={{ ...buttonStyle(), marginBottom: 16 }}>DELETE SELECTED</button><button onClick={() => setShowGrid((current) => !current)} style={{ ...buttonStyle(), marginBottom: 16, fontWeight: 800 }}>GRID · {showGrid ? "ON" : "OFF"}</button><button onClick={clearWorld} style={{ ...buttonStyle(), marginBottom: 16 }}>CLEAR WORLD</button><h2 style={{ fontSize: 14 }}>FOUNDATION</h2>{(["soil","rock","cliff"] as EdgeMaterial[]).map((material) => <button key={material} onClick={() => setEdgeMaterial(material)} style={buttonStyle(edgeMaterial === material)}>{material.toUpperCase()}</button>)}<label style={{ display: "block", marginTop: 8, color: "#9fb0c2", fontSize: 13 }}>FOUNDATION DEPTH · {edgeDepth}px<input type="range" min={MIN_EDGE_DEPTH} max={MAX_EDGE_DEPTH} value={edgeDepth} onChange={(event) => setEdgeDepth(Number(event.target.value))} style={{ width: "100%", marginTop: 8 }} /></label></aside><section style={{ border: "1px solid #33475c", background: "#101820", padding: 12 }}><canvas ref={canvasRef} width={VIEW_W} height={VIEW_H} onPointerMove={(event) => setHover(getCell(event))} onPointerLeave={() => setHover(null)} onPointerDown={(event) => { const cell = getCell(event); if (cell) handleCell(cell); }} style={{ width: "100%", height: "auto", display: "block", imageRendering: "pixelated", cursor: "crosshair" }} /><div style={{ marginTop: 10, color: "#9fb0c2", fontSize: 13 }}>History: {history.past.length} undo · {history.future.length} redo · Layer order: FOUNDATION → TERRAIN → OBJECTS → GRID OVERLAY → HOVER / SELECTION{selectedObject ? ` · Selected depth: ${getObjectDepth(selectedObject)}` : ""}</div></section></section></main>;
+  return <main style={{ maxWidth: 1120, margin: "0 auto", padding: 24, color: "#e8eef7" }}><header style={{ marginBottom: 18 }}><div style={{ color: "#7f95aa", fontSize: 12, letterSpacing: 2 }}>PIXELCHAT · GAME MAKER V2</div><h1 style={{ margin: "6px 0 8px" }}>STEP 12 — SAVE / LOAD MAPS</h1><p style={{ margin: 0, color: "#9fb0c2" }}>Map data stores world, foundation and objects. Editor state and history stay separate.</p></header><section style={{ display: "grid", gridTemplateColumns: "240px minmax(0, 1fr)", gap: 18 }}><aside style={{ border: "1px solid #33475c", background: "#101820", padding: 14 }}><h2 style={{ fontSize: 14, marginTop: 0 }}>MAP</h2><label style={{ display: "block", color: "#9fb0c2", fontSize: 12, marginBottom: 8 }}>MAP NAME<input value={mapName} onChange={(event) => { setMapName(event.target.value); setMapStatus("Not saved"); }} style={{ width: "100%", marginTop: 6, padding: 8, boxSizing: "border-box" }} /></label><div style={{ color: "#9fb0c2", fontSize: 12, marginBottom: 8 }}>ID: {mapId}</div><button onClick={saveMap} style={buttonStyle()}>SAVE MAP</button><button onClick={loadSavedMap} style={{ ...buttonStyle(), marginBottom: 16 }}>LOAD SAVED MAP</button><div style={{ color: "#9fb0c2", fontSize: 12, marginBottom: 16 }}>Status: {mapStatus}</div><h2 style={{ fontSize: 14, marginTop: 0 }}>HISTORY</h2><button disabled={!history.past.length} onClick={undo} style={buttonStyle()}>UNDO · CTRL+Z</button><button disabled={!history.future.length} onClick={redo} style={{ ...buttonStyle(), marginBottom: 16 }}>REDO · CTRL+Y</button><h2 style={{ fontSize: 14 }}>TERRAIN TOOLS</h2><button onClick={() => setTool("paint")} style={buttonStyle(tool === "paint")}>PAINT GRASS</button><button onClick={() => setTool("erase")} style={buttonStyle(tool === "erase")}>ERASE CELL</button><button onClick={() => setTool("erasePlatform")} style={{ ...buttonStyle(tool === "erasePlatform"), marginBottom: 16 }}>ERASE PLATFORM</button><h2 style={{ fontSize: 14 }}>ASSET LIBRARY</h2>{ASSET_LIBRARY.map((asset) => <button key={asset.id} onClick={() => { setSelectedAssetId(asset.id); setTool("place"); }} style={buttonStyle(selectedAssetId === asset.id && tool === "place")}>{asset.name.toUpperCase()}</button>)}<div style={{ color: "#9fb0c2", fontSize: 12, marginBottom: 12 }}>Selected: {getAsset(selectedAssetId)?.name}</div><h2 style={{ fontSize: 14 }}>OBJECT TOOLS</h2><button onClick={() => setTool("eraseObject")} style={buttonStyle(tool === "eraseObject")}>ERASE OBJECT</button><button onClick={() => setTool("select")} style={buttonStyle(tool === "select")}>SELECT OBJECT</button><button disabled={!selectedObject} onClick={() => setTool("move")} style={buttonStyle(tool === "move")}>MOVE SELECTED</button><button disabled={!selectedObject} onClick={deleteSelectedObject} style={{ ...buttonStyle(), marginBottom: 16 }}>DELETE SELECTED</button><button onClick={() => setShowGrid((current) => !current)} style={{ ...buttonStyle(), marginBottom: 16, fontWeight: 800 }}>GRID · {showGrid ? "ON" : "OFF"}</button><button onClick={clearWorld} style={{ ...buttonStyle(), marginBottom: 16 }}>CLEAR WORLD</button><h2 style={{ fontSize: 14 }}>FOUNDATION</h2>{(["soil","rock","cliff"] as EdgeMaterial[]).map((material) => <button key={material} onClick={() => { setEdgeMaterial(material); setMapStatus("Not saved"); }} style={buttonStyle(edgeMaterial === material)}>{material.toUpperCase()}</button>)}<label style={{ display: "block", marginTop: 8, color: "#9fb0c2", fontSize: 13 }}>FOUNDATION DEPTH · {edgeDepth}px<input type="range" min={MIN_EDGE_DEPTH} max={MAX_EDGE_DEPTH} value={edgeDepth} onChange={(event) => { setEdgeDepth(Number(event.target.value)); setMapStatus("Not saved"); }} style={{ width: "100%", marginTop: 8 }} /></label></aside><section style={{ border: "1px solid #33475c", background: "#101820", padding: 12 }}><canvas ref={canvasRef} width={VIEW_W} height={VIEW_H} onPointerMove={(event) => setHover(getCell(event))} onPointerLeave={() => setHover(null)} onPointerDown={(event) => { const cell = getCell(event); if (cell) handleCell(cell); }} style={{ width: "100%", height: "auto", display: "block", imageRendering: "pixelated", cursor: "crosshair" }} /><div style={{ marginTop: 10, color: "#9fb0c2", fontSize: 13 }}>History: {history.past.length} undo · {history.future.length} redo · Layer order: FOUNDATION → TERRAIN → OBJECTS → GRID OVERLAY → HOVER / SELECTION{selectedObject ? ` · Selected depth: ${getObjectDepth(selectedObject)}` : ""}</div></section></section></main>;
 }
