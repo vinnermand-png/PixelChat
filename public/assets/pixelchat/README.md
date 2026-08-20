@@ -1,14 +1,24 @@
-# PixelChat Asset Sprites
+# PixelChat External PNG Assets
 
-Place real production PNG sprites in this folder or subfolders by asset category.
+STEP 21 uses real public PNG file paths.
 
-Example:
+Required test asset:
 
-- `/public/assets/pixelchat/nature/tree-01.png`
-- `/public/assets/pixelchat/decorations/rock-01.png`
+`public/assets/pixelchat/nature/trees/tree-01.png`
 
-Asset definitions should reference public sprites with paths such as:
+The matching public URL is:
 
-`/assets/pixelchat/nature/tree-01.png`
+`/assets/pixelchat/nature/trees/tree-01.png`
 
-Sprite rendering data belongs in the central Asset Library. Collision and footprint remain separate gameplay data.
+`testTree` in the central Asset Library uses that URL through `sprite.src`.
+
+Suggested structure:
+
+```text
+public/assets/pixelchat/
+└── nature/
+    └── trees/
+        └── tree-01.png
+```
+
+The PNG only supplies the visual sprite. Render size and anchor remain in `render.bounds` and `render.anchor`. Collision and footprint remain separate gameplay data.
