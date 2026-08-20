@@ -14,7 +14,14 @@ const DEFAULT_WORLD: WorldData = {
   gridSize: DEFAULT_GRID_SIZE,
   terrain: {},
 };
+
+// STEP 4: foundation is its own renderer and configuration.
+// It is intentionally independent from the top terrain material.
 const GRASS_COLOR = "#4f9d2d";
+const SOIL_COLOR = "#8b5a2b";
+const SOIL_RIGHT_SHADE = "#74461f";
+const SOIL_LEFT_SHADE = "#9a6430";
+const FOUNDATION_DEPTH = 12;
 
 function cellKey(gx: number, gy: number) {
   return `${gx},${gy}`;
@@ -32,6 +39,53 @@ function traceDiamond(ctx: CanvasRenderingContext2D, gx: number, gy: number) {
   ctx.lineTo(p.x, p.y + TH);
   ctx.lineTo(p.x - TW / 2, p.y + TH / 2);
   ctx.closePath();
+}
+
+function drawFoundationFace(
+  ctx: CanvasRenderingContext2D,
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  color: string,
+) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(b.x, b.y + FOUNDATION_DEPTH);
+  ctx.lineTo(a.x, a.y + FOUNDATION_DEPTH);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// STEP 4: inspect terrain neighbours and draw foundation only where a
+// terrain cell meets empty space. Internal terrain-to-terrain borders are skipped.
+function drawFoundation(
+  ctx: CanvasRenderingContext2D,
+  terrain: Record<string, TerrainKey>,
+  gridSize: number,
+) {
+  const hasTerrain = (gx: number, gy: number) =>
+    inBounds(gx, gy, gridSize) && Boolean(terrain[cellKey(gx, gy)]);
+
+  for (let s = 0; s <= (gridSize - 1) * 2; s++) {
+    for (let gx = 0; gx < gridSize; gx++) {
+      const gy = s - gx;
+      if (!inBounds(gx, gy, gridSize) || !hasTerrain(gx, gy)) continue;
+
+      const p = iso(gx, gy);
+      const right = { x: p.x + TW / 2, y: p.y + TH / 2 };
+      const bottom = { x: p.x, y: p.y + TH };
+      const left = { x: p.x - TW / 2, y: p.y + TH / 2 };
+
+      // These are the two visible lower perimeter directions.
+      if (!hasTerrain(gx + 1, gy)) {
+        drawFoundationFace(ctx, right, bottom, SOIL_RIGHT_SHADE);
+      }
+      if (!hasTerrain(gx, gy + 1)) {
+        drawFoundationFace(ctx, left, bottom, SOIL_LEFT_SHADE);
+      }
+    }
+  }
 }
 
 function drawTerrainSurface(
@@ -62,8 +116,7 @@ function drawTerrainSurface(
   if (hasTerrain) ctx.fill();
 }
 
-// STEP 3: editor-only visual overlay. It reads world geometry but never
-// changes terrain data or terrain rendering.
+// Editor-only visual overlay. It reads world geometry but never changes data.
 function drawGridOverlay(ctx: CanvasRenderingContext2D, gridSize: number) {
   ctx.save();
   ctx.strokeStyle = "rgba(185, 205, 225, 0.55)";
@@ -128,6 +181,8 @@ export default function GameMakerV2() {
     ctx.fillStyle = "#15202b";
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
+    // Fixed V2 render pipeline. Each layer owns only its own responsibility.
+    drawFoundation(ctx, world.terrain, world.gridSize);
     drawTerrainSurface(ctx, world.terrain, world.gridSize);
     if (showGrid) drawGridOverlay(ctx, world.gridSize);
     drawHover(ctx, hover);
@@ -159,9 +214,9 @@ export default function GameMakerV2() {
     <main style={{ maxWidth: 1120, margin: "0 auto", padding: 24, color: "#e8eef7" }}>
       <header style={{ marginBottom: 18 }}>
         <div style={{ color: "#7f95aa", fontSize: 12, letterSpacing: 2 }}>PIXELCHAT · GAME MAKER V2</div>
-        <h1 style={{ margin: "6px 0 8px" }}>STEP 3 — GRID OVERLAY</h1>
+        <h1 style={{ margin: "6px 0 8px" }}>STEP 4 — FOUNDATION SYSTEM</h1>
         <p style={{ margin: 0, color: "#9fb0c2" }}>
-          STEP 1 and STEP 2 remain unchanged. The isometric grid is now a separate editor-only overlay and does not affect terrain data, terrain rendering or hover.
+          Soil foundation is rendered separately below the top terrain. Only outer terrain edges receive foundation faces; internal cell borders never do.
         </p>
       </header>
 
@@ -185,6 +240,7 @@ export default function GameMakerV2() {
           <div style={{ marginTop: 22, color: "#9fb0c2", fontSize: 13, lineHeight: 1.6 }}>
             <div><b>GRID DATA:</b> {world.gridSize} × {world.gridSize}</div>
             <div><b>GRID OVERLAY:</b> {showGrid ? "ON" : "OFF"}</div>
+            <div><b>FOUNDATION:</b> SOIL · {FOUNDATION_DEPTH}px</div>
             <div><b>TERRAIN CELLS:</b> {Object.keys(world.terrain).length}</div>
             <div><b>TOOL:</b> {tool.toUpperCase()}</div>
             <div><b>HOVER:</b> {hover ? `${hover.gx}, ${hover.gy}` : "OUTSIDE WORLD"}</div>
