@@ -32,11 +32,20 @@ async function generateAsset(request: Request): Promise<Response> {
     );
   }
 
-  const body = await request.json() as { prompt?: unknown };
+  const body = await request.json() as { prompt?: unknown; kind?: unknown };
   const userPrompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+  const kind = body.kind === "foundation" ? "foundation" : "object";
   if (!userPrompt) return Response.json({ error: "Prompt mangler." }, { status: 400 });
 
-  const prompt = `Create one standalone game asset for PixelChat. ${userPrompt}\n\nSTRICT STYLE LOCK: crisp low-resolution pixel art, transparent background, no text, no UI, no scene, no floor, no shadow outside the asset, no anti-aliasing, no blur, centered composition, readable silhouette, game-ready PNG, consistent simple colorful PixelChat visual style.`;
+  const objectPrompt = `Create one standalone game object for PixelChat. ${userPrompt}
+
+STRICT OBJECT CONTRACT: crisp low-resolution pixel art, transparent background, no text, no UI, no scene, no floor, no shadow outside the object, no anti-aliasing, no blur, centered composition, readable silhouette, game-ready PNG, consistent simple colorful PixelChat visual style. The object must be isolated and must not contain terrain or other objects.`;
+
+  const foundationPrompt = `Create exactly one PixelChat foundation terrain tile. ${userPrompt}
+
+STRICT FOUNDATION CONTRACT: the final asset represents one isometric ground diamond only, designed for a locked 32 × 16 pixel isometric tile contract. Crisp low-resolution pixel art, hard pixel edges, no anti-aliasing, no blur, no text, no UI, no characters, no trees, no rocks, no buildings, no props, no separate objects, no scene. Show only the ground surface filling the tile shape. Use subtle readable texture and restrained color variation. Keep the surface visually clean and repeat-friendly so many copies can be painted beside each other in a game world. Match the existing simple colorful PixelChat visual style. Do not add a cast shadow outside the tile.`;
+
+  const prompt = kind === "foundation" ? foundationPrompt : objectPrompt;
 
   const openaiResponse = await fetch("https://api.openai.com/v1/images/generations", {
     method: "POST",
@@ -48,7 +57,7 @@ async function generateAsset(request: Request): Promise<Response> {
       model: "gpt-image-1",
       prompt,
       size: "1024x1024",
-      background: "transparent",
+      background: kind === "foundation" ? "opaque" : "transparent",
       output_format: "png",
       quality: "low",
     }),
@@ -69,11 +78,9 @@ async function generateAsset(request: Request): Promise<Response> {
   const imageBase64 = payload.data?.[0]?.b64_json;
   if (!imageBase64) return Response.json({ error: "OpenAI returnerede intet billede." }, { status: 502 });
 
-  return Response.json({ imageBase64 });
+  return Response.json({ imageBase64, kind });
 }
 
-// h3 swallows in-handler throws into a normal 500 Response with body
-// {"unhandled":true,"message":"HTTPError"} — try/catch alone never fires for those.
 async function normalizeCatastrophicSsrResponse(response: Response): Promise<Response> {
   if (response.status < 500) return response;
   const contentType = response.headers.get("content-type") ?? "";
