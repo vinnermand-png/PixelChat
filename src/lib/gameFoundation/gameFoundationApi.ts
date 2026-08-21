@@ -61,7 +61,11 @@ export function createFoundationDnaVersion(
     },
     dnaVersions: foundation.dnaVersions.map((version) =>
       version.status === "active"
-        ? { ...version, status: "archived" as const, updatedAt: dnaVersion.updatedAt }
+        ? {
+            ...version,
+            status: "archived" as const,
+            updatedAt: dnaVersion.updatedAt,
+          }
         : version,
     ).concat(dnaVersion),
     activeVersionId: dnaVersion.id,
@@ -83,7 +87,9 @@ export function calculateFoundationReadiness(foundation: GameFoundation): {
   const stages = [
     Boolean(foundation.game.id && foundation.game.name.trim()),
     foundation.status !== "discovery",
-    foundation.status === "draft" || foundation.status === "review" || foundation.status === "active",
+    foundation.status === "draft" ||
+      foundation.status === "review" ||
+      foundation.status === "active",
     foundation.dnaVersions.length > 0,
     foundation.status === "active",
     Boolean(getActiveGameDna(foundation)),
@@ -96,7 +102,12 @@ export function calculateFoundationReadiness(foundation: GameFoundation): {
     score,
     completedStages,
     totalStages,
-    label: score === 100 ? "Ready for build" : score >= 67 ? "Definition in progress" : "Game definition in progress",
+    label:
+      score >= 83
+        ? "Ready for build"
+        : score >= 67
+          ? "Definition in progress"
+          : "Game definition in progress",
   };
 }
 
