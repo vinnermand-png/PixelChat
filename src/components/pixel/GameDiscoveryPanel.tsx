@@ -38,6 +38,7 @@ const UNDERSTANDING_FIELDS = [
   ["Social Interaction", "socialInteraction"],
   ["Progression", "progression"],
   ["Gameplay Goals", "gameplayGoals"],
+  ["Visual Identity", "visualIdentity"],
   ["Additional Notes", "additionalNotes"],
 ] as const;
 
