@@ -30,6 +30,7 @@ export interface GameDiscoveryUnderstanding {
   socialInteraction?: string;
   progression?: string;
   gameplayGoals?: string;
+  visualIdentity?: string;
   additionalNotes?: string;
 }
 
