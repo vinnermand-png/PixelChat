@@ -8,6 +8,7 @@ type PlayerEntry = { id: string; label: string; gx: number; gy: number; worldId:
 type CentralGameplayArea = { id: string; label: string; bounds: WorldBounds; center: GridPoint; worldId: string; mapId: string; starterAreaId: string; playerEntryId: string };
 type KeyLocationKind = "fishing" | "farming" | "combat" | "adventure" | "social" | "core";
 type KeyLocation = { id: string; label: string; kind: KeyLocationKind; gx: number; gy: number; worldId: string; mapId: string; centralGameplayAreaId: string; conceptSource: string };
+type ExplorableZone = { id: string; label: string; bounds: WorldBounds; center: GridPoint; worldId: string; mapId: string; conceptSource: string };
 type TerrainZone = { id: string; label: string; terrainId: TerrainId; bounds: WorldBounds; source: "starter-area" | "world-identity" };
 type TerrainConnection = { id: string; fromZoneId: string; toZoneId: string; type: "transition"; description: string };
 type TerrainPath = { id: string; label: string; fromZoneId: string; toZoneId: string; points: GridPoint[]; terrainId: "dirt" };
@@ -20,6 +21,7 @@ type WorldStructureData = {
   playerEntry?: PlayerEntry;
   centralGameplayArea?: CentralGameplayArea;
   keyLocations?: KeyLocation[];
+  additionalExplorableZones?: ExplorableZone[];
   terrain?: TerrainStructureData;
 };
 type StoredMap = {
@@ -102,6 +104,10 @@ function pointInBounds(point: GridPoint, bounds: WorldBounds) {
   return point.gx >= bounds.minX && point.gx <= bounds.maxX && point.gy >= bounds.minY && point.gy <= bounds.maxY;
 }
 
+function boundsOverlap(a: WorldBounds, b: WorldBounds) {
+  return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
+}
+
 function createPlayableWorld(map: StoredMap, plan: GameBuildPlan): StoredMap {
   const existing = map.world.structure;
   return {
@@ -117,6 +123,7 @@ function createPlayableWorld(map: StoredMap, plan: GameBuildPlan): StoredMap {
         playerEntry: existing?.playerEntry,
         centralGameplayArea: existing?.centralGameplayArea,
         keyLocations: existing?.keyLocations,
+        additionalExplorableZones: existing?.additionalExplorableZones,
         terrain: existing?.terrain,
       },
     },
@@ -350,6 +357,87 @@ function defineKeyLocations(map: StoredMap, plan: GameBuildPlan): StoredMap {
   };
 }
 
+function deriveExplorableZoneLabel(sourceSummary: string) {
+  const text = sourceSummary.toLowerCase();
+  if (/fish|fishing|harbor|harbour|dock|pier/.test(text)) return "Fishing Exploration Zone";
+  if (/farm|farming|crop|harvest/.test(text)) return "Farming Exploration Zone";
+  if (/combat|battle|arena|fight/.test(text)) return "Combat Exploration Zone";
+  if (/quest|adventure|explore|exploration/.test(text)) return "Adventure Exploration Zone";
+  if (/social|multiplayer|shared|chat|community|meeting/.test(text)) return "Social Exploration Zone";
+  return "Additional Exploration Zone";
+}
+
+function defineAdditionalExplorableZones(map: StoredMap, plan: GameBuildPlan): StoredMap {
+  const structure = map.world.structure;
+  const dimensions = structure?.dimensions;
+  const starterArea = structure?.starterArea;
+  const playerEntry = structure?.playerEntry;
+  const centralGameplayArea = structure?.centralGameplayArea;
+  const keyLocations = structure?.keyLocations;
+  if (!structure?.playable || !dimensions || !starterArea || !playerEntry || !centralGameplayArea || !keyLocations?.length) {
+    throw new Error("Playable world, dimensions, starter area, player entry, central gameplay area and key locations must exist before additional explorable zones can be defined.");
+  }
+  if (centralGameplayArea.worldId !== structure.playable.id || centralGameplayArea.mapId !== map.id) {
+    throw new Error("The central gameplay area does not reference the active world and map.");
+  }
+  if (playerEntry.worldId !== structure.playable.id || playerEntry.mapId !== map.id) {
+    throw new Error("The player entry does not reference the active world and map.");
+  }
+  for (const location of keyLocations) {
+    if (location.worldId !== structure.playable.id || location.mapId !== map.id || location.centralGameplayAreaId !== centralGameplayArea.id) {
+      throw new Error("Existing key locations do not reference the active world, map and central gameplay area.");
+    }
+  }
+
+  const size = Math.max(2, Math.min(6, Math.floor(Math.min(dimensions.width, dimensions.height) / 3)));
+  const candidates: WorldBounds[] = [
+    { minX: centralGameplayArea.bounds.maxX + 1, maxX: centralGameplayArea.bounds.maxX + size, minY: centralGameplayArea.bounds.minY, maxY: Math.min(dimensions.bounds.maxY, centralGameplayArea.bounds.minY + size - 1) },
+    { minX: centralGameplayArea.bounds.minX - size, maxX: centralGameplayArea.bounds.minX - 1, minY: centralGameplayArea.bounds.minY, maxY: Math.min(dimensions.bounds.maxY, centralGameplayArea.bounds.minY + size - 1) },
+    { minX: centralGameplayArea.bounds.minX, maxX: Math.min(dimensions.bounds.maxX, centralGameplayArea.bounds.minX + size - 1), minY: centralGameplayArea.bounds.maxY + 1, maxY: centralGameplayArea.bounds.maxY + size },
+    { minX: centralGameplayArea.bounds.minX, maxX: Math.min(dimensions.bounds.maxX, centralGameplayArea.bounds.minX + size - 1), minY: centralGameplayArea.bounds.minY - size, maxY: centralGameplayArea.bounds.minY - 1 },
+  ];
+  const bounds = candidates.find((candidate) => candidate.minX >= dimensions.bounds.minX
+    && candidate.maxX <= dimensions.bounds.maxX
+    && candidate.minY >= dimensions.bounds.minY
+    && candidate.maxY <= dimensions.bounds.maxY
+    && !boundsOverlap(candidate, starterArea.bounds)
+    && !boundsOverlap(candidate, centralGameplayArea.bounds));
+  if (!bounds) throw new Error("No non-overlapping explorable zone can be placed inside the existing playable world.");
+
+  const occupiedPoints = [
+    { gx: playerEntry.gx, gy: playerEntry.gy },
+    ...keyLocations.map((location) => ({ gx: location.gx, gy: location.gy })),
+  ];
+  if (occupiedPoints.some((point) => pointInBounds(point, bounds))) {
+    throw new Error("The additional explorable zone would overlap the player entry or an existing key location.");
+  }
+
+  const existing = structure.additionalExplorableZones ?? [];
+  const zone = existing[0] ?? {
+    id: crypto.randomUUID(),
+    label: deriveExplorableZoneLabel(plan.sourceSummary),
+    bounds,
+    center: {
+      gx: Math.floor((bounds.minX + bounds.maxX) / 2),
+      gy: Math.floor((bounds.minY + bounds.maxY) / 2),
+    },
+    worldId: structure.playable.id,
+    mapId: map.id,
+    conceptSource: plan.sourceSummary,
+  };
+
+  return {
+    ...map,
+    world: {
+      ...map.world,
+      structure: {
+        ...structure,
+        additionalExplorableZones: [zone],
+      },
+    },
+  };
+}
+
 function chooseWorldTerrain(plan: GameBuildPlan): TerrainId {
   const text = plan.sourceSummary.toLowerCase();
   if (/snow|winter|ice|frost|arctic/.test(text)) return "snow";
@@ -569,6 +657,19 @@ function applyKeyLocationsTask(task: GameBuildTask, plan: GameBuildPlan, map: St
   };
 }
 
+function applyAdditionalExplorableZonesTask(task: GameBuildTask, plan: GameBuildPlan, map: StoredMap) {
+  if (task.title !== "Define additional explorable zones") {
+    throw new Error("Unknown World Areas task.");
+  }
+  const next = defineAdditionalExplorableZones(map, plan);
+  const zones = next.world.structure?.additionalExplorableZones;
+  if (!zones?.length) throw new Error("No additional explorable zones were created.");
+  return {
+    map: next,
+    summary: `Persisted ${zones.length} additional explorable zone${zones.length === 1 ? "" : "s"} inside the existing playable world.`,
+  };
+}
+
 function verifyPlayerEntryPersisted(map: StoredMap) {
   const structure = map.world.structure;
   const dimensions = structure?.dimensions;
@@ -645,6 +746,44 @@ function verifyKeyLocationsPersisted(map: StoredMap) {
   }
 }
 
+function verifyAdditionalExplorableZonesPersisted(map: StoredMap) {
+  const structure = map.world.structure;
+  const dimensions = structure?.dimensions;
+  const starterArea = structure?.starterArea;
+  const playerEntry = structure?.playerEntry;
+  const centralGameplayArea = structure?.centralGameplayArea;
+  const keyLocations = structure?.keyLocations;
+  const zones = structure?.additionalExplorableZones;
+  if (!structure?.playable || !dimensions || !starterArea || !playerEntry || !centralGameplayArea || !keyLocations?.length || !zones?.length) {
+    throw new Error("Additional explorable zone data was not persisted with the required world structure.");
+  }
+  const ids = new Set<string>();
+  for (const zone of zones) {
+    if (ids.has(zone.id)) throw new Error("Persisted additional explorable zones must have stable unique ids.");
+    ids.add(zone.id);
+    if (zone.worldId !== structure.playable.id || zone.mapId !== map.id) {
+      throw new Error("A persisted additional explorable zone does not reference the active world and map.");
+    }
+    if (!zone.conceptSource.trim()) throw new Error("A persisted additional explorable zone is missing its concept source.");
+    if (!pointInBounds(zone.center, dimensions.bounds)
+      || zone.bounds.minX < dimensions.bounds.minX
+      || zone.bounds.maxX > dimensions.bounds.maxX
+      || zone.bounds.minY < dimensions.bounds.minY
+      || zone.bounds.maxY > dimensions.bounds.maxY) {
+      throw new Error("A persisted additional explorable zone is outside the playable world bounds.");
+    }
+    if (boundsOverlap(zone.bounds, starterArea.bounds) || boundsOverlap(zone.bounds, centralGameplayArea.bounds)) {
+      throw new Error("A persisted additional explorable zone overlaps the existing starter or central gameplay area.");
+    }
+    if (pointInBounds({ gx: playerEntry.gx, gy: playerEntry.gy }, zone.bounds)) {
+      throw new Error("A persisted additional explorable zone overlaps the player entry point.");
+    }
+    if (keyLocations.some((location) => pointInBounds({ gx: location.gx, gy: location.gy }, zone.bounds))) {
+      throw new Error("A persisted additional explorable zone overlaps an existing key location.");
+    }
+  }
+}
+
 export function executeCurrentGameBuildTask(plan: GameBuildPlan): GameBuildExecutionResult {
   if (typeof window === "undefined") throw new Error("Game build execution requires the browser GameMaker runtime.");
   const task = findCurrentTask(plan);
@@ -652,8 +791,9 @@ export function executeCurrentGameBuildTask(plan: GameBuildPlan): GameBuildExecu
   const isPlayerEntryPhase = (phase?.id === "core-play-area" || phase?.id === "social-hub") && (task.title === "Define player entry" || task.title === "Define player spawn");
   const isCentralGameplayAreaPhase = phase?.id === "core-play-area" && task.title === "Define central gameplay area";
   const isKeyLocationsPhase = (phase?.id === "core-play-area" || phase?.id === "social-hub") && (task.title === "Define key locations" || task.title === "Define key social locations");
-  if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain" && !isPlayerEntryPhase && !isCentralGameplayAreaPhase && !isKeyLocationsPhase)) {
-    throw new Error("Execution is currently available for World Structure, Terrain, player entry, central gameplay area and key locations tasks only.");
+  const isAdditionalExplorableZonesPhase = phase?.id === "world-areas" && task.title === "Define additional explorable zones";
+  if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain" && !isPlayerEntryPhase && !isCentralGameplayAreaPhase && !isKeyLocationsPhase && !isAdditionalExplorableZonesPhase)) {
+    throw new Error("Execution is currently available for World Structure, Terrain, player entry, central gameplay area, key locations and additional explorable zones tasks only.");
   }
   const map = readCurrentMap();
   const action = phase.id === "world-structure"
@@ -664,10 +804,13 @@ export function executeCurrentGameBuildTask(plan: GameBuildPlan): GameBuildExecu
         ? applyPlayerEntryTask(task, map)
         : isCentralGameplayAreaPhase
           ? applyCentralGameplayAreaTask(task, map)
-          : applyKeyLocationsTask(task, plan, map);
+          : isKeyLocationsPhase
+            ? applyKeyLocationsTask(task, plan, map)
+            : applyAdditionalExplorableZonesTask(task, plan, map);
   const persisted = writeAndLoadMap(action.map);
   if (isPlayerEntryPhase) verifyPlayerEntryPersisted(persisted);
   if (isCentralGameplayAreaPhase) verifyCentralGameplayAreaPersisted(persisted);
   if (isKeyLocationsPhase) verifyKeyLocationsPersisted(persisted);
+  if (isAdditionalExplorableZonesPhase) verifyAdditionalExplorableZonesPersisted(persisted);
   return { taskId: task.id, summary: action.summary };
 }
