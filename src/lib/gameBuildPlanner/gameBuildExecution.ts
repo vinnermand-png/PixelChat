@@ -1,3 +1,4 @@
+import { DEFAULT_WORLD_SIZE_CONFIG, normalizeWorldSizeConfig, type WorldSizeConfig } from "@/lib/gameFoundation/gameFoundation";
 import type { GameBuildPlan, GameBuildTask } from "./gameBuildPlan";
 
 type TerrainId = "grass" | "dirt" | "snow" | "sand" | "stone";
@@ -32,6 +33,8 @@ type StoredMap = {
   name: string;
   world: {
     gridSize: number;
+    width?: number;
+    height?: number;
     terrain: Record<string, TerrainId>;
     structure?: WorldStructureData;
   };
@@ -45,7 +48,7 @@ export interface GameBuildExecutionResult {
 }
 
 const MAP_STORAGE_KEY = "pixelchat-game-maker-v2-map-v1";
-const DEFAULT_WORLD_SIZE = 20;
+const DEFAULT_WORLD_SIZE = DEFAULT_WORLD_SIZE_CONFIG.width;
 
 function getEditorButton(label: string) {
   return Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === label);
@@ -74,8 +77,16 @@ function writeAndLoadMap(map: StoredMap): StoredMap {
   return persisted;
 }
 
+function normalizePlanWorldSize(plan: GameBuildPlan): WorldSizeConfig {
+  return normalizeWorldSizeConfig(plan.worldSize ?? DEFAULT_WORLD_SIZE_CONFIG);
+}
+
 function worldBounds(size: number): WorldBounds {
   return { minX: 0, minY: 0, maxX: size - 1, maxY: size - 1 };
+}
+
+function rectangularWorldBounds(width: number, height: number): WorldBounds {
+  return { minX: 0, minY: 0, maxX: width - 1, maxY: height - 1 };
 }
 
 function findCurrentTask(plan: GameBuildPlan): GameBuildTask {
@@ -112,11 +123,15 @@ function boundsOverlap(a: WorldBounds, b: WorldBounds) {
 
 function createPlayableWorld(map: StoredMap, plan: GameBuildPlan): StoredMap {
   const existing = map.world.structure;
+  const worldSize = normalizePlanWorldSize(plan);
   return {
     ...map,
     name: map.name === "Untitled Map" ? `${plan.gameName} World` : map.name,
     world: {
       ...map.world,
+      gridSize: Math.max(worldSize.width, worldSize.height),
+      width: worldSize.width,
+      height: worldSize.height,
       structure: {
         version: 1,
         playable: existing?.playable ?? { id: crypto.randomUUID(), sourceSummary: plan.sourceSummary },
@@ -133,18 +148,23 @@ function createPlayableWorld(map: StoredMap, plan: GameBuildPlan): StoredMap {
   };
 }
 
-function defineWorldDimensions(map: StoredMap): StoredMap {
-  const size = Math.max(map.world.gridSize, DEFAULT_WORLD_SIZE);
+function defineWorldDimensions(map: StoredMap, plan: GameBuildPlan): StoredMap {
+  const worldSize = normalizePlanWorldSize(plan);
+  const width = Number.isInteger(map.world.width) && map.world.width! > 0 ? map.world.width! : worldSize.width;
+  const height = Number.isInteger(map.world.height) && map.world.height! > 0 ? map.world.height! : worldSize.height;
   const existing = map.world.structure;
   if (!existing?.playable) throw new Error("Playable world data must exist before dimensions can be defined.");
+  const bounds = rectangularWorldBounds(width, height);
   return {
     ...map,
     world: {
       ...map.world,
-      gridSize: size,
+      gridSize: Math.max(width, height),
+      width,
+      height,
       structure: {
         ...existing,
-        dimensions: { width: size, height: size, bounds: worldBounds(size) },
+        dimensions: { width, height, bounds },
       },
     },
   };
@@ -675,8 +695,9 @@ function applyWorldStructureTask(plan: GameBuildPlan, task: GameBuildTask, map: 
     return { map: createPlayableWorld(map, plan), summary: "Created persisted playable-world structure data from the current build plan." };
   }
   if (task.title === "Define world dimensions") {
-    const next = defineWorldDimensions(map);
-    return { map: next, summary: `Persisted ${next.world.gridSize} × ${next.world.gridSize} playable bounds used by the GameMaker canvas.` };
+    const next = defineWorldDimensions(map, plan);
+    const dimensions = next.world.structure?.dimensions;
+    return { map: next, summary: `Persisted ${dimensions?.width ?? next.world.gridSize} × ${dimensions?.height ?? next.world.gridSize} playable bounds used by the GameMaker canvas.` };
   }
   if (task.title === "Define starter area") {
     const next = defineStarterArea(map, plan);
