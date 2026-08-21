@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import GameCreationDialog from "@/components/pixel/GameCreationDialog";
 import GameDiscoveryPanel from "@/components/pixel/GameDiscoveryPanel";
@@ -52,6 +52,15 @@ const DIRECT_DISCOVERY_CATEGORY_LABELS: Record<
   goals: "Gameplay Goals",
   other: "Additional Notes",
 };
+
+const WORKFLOW_STEPS = [
+  "CREATE GAME",
+  "DISCOVERY",
+  "FOUNDATION",
+  "GAME DNA",
+  "REVIEW",
+  "START BUILD",
+] as const;
 
 type DiscoveryUnderstandingField =
   (typeof DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD)[keyof typeof DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD];
@@ -134,10 +143,7 @@ function upsertDirectDiscoveryAnswer(
   const trimmedAnswer = answer.trim();
 
   if (!existingQuestion && !trimmedAnswer) return session;
-
-  if (existingQuestion) {
-    return submitDiscoveryAnswer(session, existingQuestion.id, answer);
-  }
+  if (existingQuestion) return submitDiscoveryAnswer(session, existingQuestion.id, answer);
 
   const sessionWithQuestion = addDiscoveryQuestion(session, {
     id: crypto.randomUUID(),
@@ -146,17 +152,15 @@ function upsertDirectDiscoveryAnswer(
     importance: "required",
   });
 
-  return submitDiscoveryAnswer(
-    sessionWithQuestion,
-    sessionWithQuestion.questions.at(-1)!.id,
-    answer,
-  );
+  return submitDiscoveryAnswer(sessionWithQuestion, sessionWithQuestion.questions.at(-1)!.id, answer);
 }
 
 function GameMakerRoute() {
   const [isCreateGameOpen, setIsCreateGameOpen] = useState(false);
   const [isFoundationInspectorOpen, setIsFoundationInspectorOpen] = useState(false);
   const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
+  const [isReviewCompleted, setIsReviewCompleted] = useState(false);
+  const [isBuildStarted, setIsBuildStarted] = useState(false);
   const [activeFoundation, setActiveFoundation] = useState<GameFoundation | null>(null);
   const [discoverySession, setDiscoverySession] = useState<GameDiscoverySession | null>(null);
 
@@ -166,8 +170,7 @@ function GameMakerRoute() {
       setIsDiscoveryOpen(true);
       return;
     }
-    const session = startDiscovery({ id: crypto.randomUUID(), foundation: activeFoundation });
-    setDiscoverySession(session);
+    setDiscoverySession(startDiscovery({ id: crypto.randomUUID(), foundation: activeFoundation }));
     setIsDiscoveryOpen(true);
   };
 
@@ -187,6 +190,8 @@ function GameMakerRoute() {
 
     setDiscoverySession(completedSession);
     setActiveFoundation(updatedFoundation.status === "discovery" ? moveFoundationToDraft(updatedFoundation) : updatedFoundation);
+    setIsReviewCompleted(false);
+    setIsBuildStarted(false);
     setIsDiscoveryOpen(false);
   };
 
@@ -195,48 +200,127 @@ function GameMakerRoute() {
     if (discoverySession.status !== "complete" || activeFoundation.status !== "draft" || activeFoundation.dnaVersions.length > 0) return;
     const foundationWithDna = createFoundationDnaVersion(activeFoundation, buildInitialGameDna(activeFoundation, discoverySession));
     setActiveFoundation(moveFoundationToReview(foundationWithDna));
+    setIsReviewCompleted(false);
+    setIsBuildStarted(false);
   };
 
   const isDiscoveryComplete = discoverySession?.status === "complete";
   const latestDna = activeFoundation?.dnaVersions.at(-1);
   const canGenerateGameDna = Boolean(isDiscoveryComplete && activeFoundation?.status === "draft" && activeFoundation.dnaVersions.length === 0);
 
+  const currentStep = useMemo(() => {
+    if (!activeFoundation) return 1;
+    if (!isDiscoveryComplete) return 2;
+    if (!latestDna) return 3;
+    if (!isReviewCompleted) return 5;
+    return 6;
+  }, [activeFoundation, isDiscoveryComplete, latestDna, isReviewCompleted]);
+
+  const openFoundationReview = () => setIsFoundationInspectorOpen(true);
+
+  const primaryAction = (() => {
+    if (!activeFoundation) return { label: "CREATE GAME", action: () => setIsCreateGameOpen(true), step: 1 };
+    if (!isDiscoveryComplete) return { label: discoverySession ? "CONTINUE DISCOVERY" : "START DISCOVERY", action: handleStartDiscovery, step: 2 };
+    if (!latestDna && canGenerateGameDna) return { label: "GENERATE GAME DNA", action: handleGenerateGameDna, step: 4 };
+    if (latestDna && !isReviewCompleted) return { label: "REVIEW FOUNDATION", action: openFoundationReview, step: 5 };
+    return { label: isBuildStarted ? "GAME BUILD STARTED" : "START GAME BUILD", action: () => setIsBuildStarted(true), step: 6 };
+  })();
+
   return (
-    <div className="flex min-h-screen flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 bg-[#0b111c] px-4 py-3 text-white">
-        <div className="text-sm font-semibold">{activeFoundation ? `Game: ${activeFoundation.game.name}` : "No Game Selected"}</div>
-        <div className="flex flex-wrap items-center gap-2">
-          {isDiscoveryComplete ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold text-[#a9df5a]">{latestDna ? "GAME DNA GENERATED · FOUNDATION READY FOR REVIEW" : "DISCOVERY COMPLETE · FOUNDATION READY FOR GAME DNA"}</span>
-              <button type="button" onClick={() => setIsFoundationInspectorOpen(true)} className="rounded border border-[#a9df5a] px-3 py-2 text-xs font-semibold text-[#a9df5a]">REVIEW FOUNDATION</button>
-              {canGenerateGameDna ? <button type="button" onClick={handleGenerateGameDna} className="rounded border border-[#fbbf24] bg-[#3a2b0b] px-3 py-2 text-xs font-semibold text-[#fbbf24]">GENERATE GAME DNA</button> : null}
+    <div className="flex min-h-screen flex-col bg-[#090f18] text-white">
+      <header className="border-b border-white/10 bg-[#0b111c] px-4 py-4">
+        <div className="mx-auto max-w-[1800px]">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#6ee7d8]">Game Creation Progress</p>
+              <h1 className="mt-1 text-sm font-semibold">{activeFoundation ? activeFoundation.game.name : "Create your game"}</h1>
             </div>
-          ) : null}
-          <button type="button" onClick={handleStartDiscovery} disabled={!activeFoundation} className="rounded border border-[#c084fc] px-3 py-2 text-xs font-semibold text-[#c084fc] disabled:cursor-not-allowed disabled:opacity-40">{discoverySession ? "OPEN DISCOVERY" : "START DISCOVERY"}</button>
-          <button type="button" onClick={() => setIsFoundationInspectorOpen(true)} className="rounded border border-[#6ee7d8] px-3 py-2 text-xs font-semibold text-[#6ee7d8]">GAME FOUNDATION</button>
-          <button type="button" onClick={() => setIsCreateGameOpen(true)} className="rounded border border-[#a9df5a] px-3 py-2 text-xs font-semibold text-[#a9df5a]">CREATE GAME</button>
+            {activeFoundation ? (
+              <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-wide">
+                {isDiscoveryComplete ? <button type="button" onClick={handleStartDiscovery} className="rounded border border-white/10 px-2.5 py-1.5 text-white/60 hover:border-[#c084fc] hover:text-[#c084fc]">Open Discovery</button> : null}
+                <button type="button" onClick={openFoundationReview} className="rounded border border-white/10 px-2.5 py-1.5 text-white/60 hover:border-[#6ee7d8] hover:text-[#6ee7d8]">Foundation</button>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
+            {WORKFLOW_STEPS.map((label, index) => {
+              const step = index + 1;
+              const isComplete = step < currentStep;
+              const isCurrent = step === currentStep;
+              const canReview = activeFoundation && step <= currentStep && step < 6;
+              const onClick = canReview
+                ? step === 1
+                  ? () => setIsCreateGameOpen(true)
+                  : step === 2
+                    ? handleStartDiscovery
+                    : openFoundationReview
+                : undefined;
+
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={onClick}
+                  disabled={!canReview}
+                  className={`flex min-h-14 items-center gap-3 rounded border px-3 py-2 text-left transition ${isCurrent ? "border-[#a9df5a] bg-[#172319] shadow-[0_0_18px_rgba(169,223,90,0.08)]" : isComplete ? "border-[#6ee7d8]/40 bg-[#0e1720] hover:border-[#6ee7d8]" : "cursor-not-allowed border-white/5 bg-black/10 opacity-45"}`}
+                >
+                  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border text-[10px] font-bold ${isCurrent ? "border-[#a9df5a] bg-[#a9df5a]/10 text-[#a9df5a]" : isComplete ? "border-[#6ee7d8] text-[#6ee7d8]" : "border-white/20 text-white/40"}`}>{isComplete ? "✓" : step}</span>
+                  <span className="min-w-0">
+                    <span className={`block text-[10px] font-bold uppercase tracking-wide ${isCurrent ? "text-[#a9df5a]" : isComplete ? "text-[#6ee7d8]" : "text-white/50"}`}>{label}</span>
+                    <span className="mt-0.5 block text-[9px] uppercase tracking-wide text-white/35">{isCurrent ? "Current" : isComplete ? "Complete" : "Upcoming"}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 flex flex-col gap-3 rounded border border-[#a9df5a]/20 bg-[#0d1713] p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#a9df5a]">Step {currentStep} of 6</p>
+              <p className="mt-1 text-xs text-white/70">{latestDna && !isReviewCompleted ? "GAME DNA GENERATED · Review your Foundation and Game DNA before starting the game build." : `NEXT ACTION · ${primaryAction.label}`}</p>
+            </div>
+            <button type="button" onClick={primaryAction.action} className="rounded border border-[#a9df5a] bg-[#172319] px-5 py-3 text-xs font-bold uppercase tracking-wide text-[#c8f28d] hover:bg-[#20301f]">
+              {primaryAction.label}
+            </button>
+          </div>
         </div>
-      </div>
+      </header>
 
       {latestDna ? (
-        <section className="border-b border-[#fbbf24]/30 bg-[#151109] px-4 py-3 text-[#f8edc2]">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h2 className="text-xs font-semibold">GAME DNA · {latestDna.version}</h2><span className="text-[10px] uppercase tracking-wide text-[#fbbf24]">{latestDna.status}</span></div>
-          <div className="grid gap-3 text-xs md:grid-cols-2 xl:grid-cols-3">
-            <p><span className="text-[#fbbf24]">Creative Anchor:</span> {latestDna.creativeAnchor || "Not defined yet."}</p>
-            <p><span className="text-[#fbbf24]">Core Identity:</span> {latestDna.coreIdentity || "Not defined yet."}</p>
-            <p><span className="text-[#fbbf24]">Emotional Identity:</span> {latestDna.emotionalIdentity || "Not defined yet."}</p>
-            <p><span className="text-[#fbbf24]">World Identity:</span> {latestDna.worldIdentity || "Not defined yet."}</p>
-            <p><span className="text-[#fbbf24]">Visual Identity:</span> {latestDna.visualIdentity || "Not defined yet."}</p>
-            <p><span className="text-[#fbbf24]">Asset Identity:</span> {latestDna.assetIdentity || "Not defined yet."}</p>
+        <section className="border-b border-[#fbbf24]/20 bg-[#100e0a] px-4 py-5">
+          <div className="mx-auto max-w-[1800px]">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#fbbf24]">Game DNA · {latestDna.version}</p>
+                <h2 className="mt-1 text-sm font-semibold text-[#f8edc2]">GAME DNA GENERATED</h2>
+              </div>
+              <span className="rounded border border-[#fbbf24]/40 px-2 py-1 text-[10px] uppercase tracking-wide text-[#fbbf24]">{latestDna.status}</span>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {[
+                ["CREATIVE ANCHOR", latestDna.creativeAnchor, "Overall creative direction and the central idea holding the game together."],
+                ["CORE IDENTITY", latestDna.coreIdentity, "What the game fundamentally is."],
+                ["EMOTIONAL IDENTITY", latestDna.emotionalIdentity, "How the player should feel and why they return."],
+                ["WORLD IDENTITY", latestDna.worldIdentity, "What the world is and how it functions."],
+                ["VISUAL IDENTITY", latestDna.visualIdentity, "Visual style and artistic direction."],
+                ["ASSET IDENTITY", latestDna.assetIdentity, "Important player activity, systems and asset direction."],
+              ].map(([title, value, hint]) => (
+                <article key={title} className="min-w-0 rounded border border-[#fbbf24]/20 bg-[#151109] p-4">
+                  <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#fbbf24]">{title}</h3>
+                  <p className="mt-2 break-words whitespace-pre-wrap text-xs leading-6 text-[#f8edc2]">{value || "Not defined yet."}</p>
+                  <p className="mt-3 border-t border-white/5 pt-2 text-[10px] leading-4 text-white/35">{hint}</p>
+                </article>
+              ))}
+            </div>
           </div>
         </section>
       ) : null}
 
       <GameMakerV2 />
 
-      {isCreateGameOpen ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><GameCreationDialog onCancel={() => setIsCreateGameOpen(false)} onGameCreated={(foundation) => { setActiveFoundation(foundation); setDiscoverySession(null); setIsDiscoveryOpen(false); setIsCreateGameOpen(false); }} /></div> : null}
-      {isFoundationInspectorOpen ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><GameFoundationInspector foundation={activeFoundation} onClose={() => setIsFoundationInspectorOpen(false)} /></div> : null}
+      {isCreateGameOpen ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><GameCreationDialog onCancel={() => setIsCreateGameOpen(false)} onGameCreated={(foundation) => { setActiveFoundation(foundation); setDiscoverySession(null); setIsDiscoveryOpen(false); setIsReviewCompleted(false); setIsBuildStarted(false); setIsCreateGameOpen(false); }} /></div> : null}
+      {isFoundationInspectorOpen ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><GameFoundationInspector foundation={activeFoundation} onClose={() => { setIsFoundationInspectorOpen(false); if (latestDna) setIsReviewCompleted(true); }} /></div> : null}
       {isDiscoveryOpen && activeFoundation && discoverySession ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <GameDiscoveryPanel
