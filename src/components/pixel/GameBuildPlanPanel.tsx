@@ -18,12 +18,14 @@ export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: Game
   const currentPhase = plan?.phases.find((phase) => phase.tasks.some((task) => task.id === currentTask?.id));
   const isComplete = Boolean(plan && tasks.length && tasks.every((task) => task.status === "complete"));
   const isPlayerEntryTask = currentTask?.title === "Define player entry" || currentTask?.title === "Define player spawn";
+  const isCentralGameplayAreaTask = currentTask?.title === "Define central gameplay area";
   const canExecute = Boolean(
     currentTask
       && (
         currentPhase?.id === "world-structure"
         || currentPhase?.id === "terrain"
         || ((currentPhase?.id === "core-play-area" || currentPhase?.id === "social-hub") && isPlayerEntryTask)
+        || (currentPhase?.id === "core-play-area" && isCentralGameplayAreaTask)
       )
       && !isComplete,
   );
