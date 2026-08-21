@@ -1,3 +1,5 @@
+import type { WorldSizeConfig } from "@/lib/gameFoundation/gameFoundation";
+
 export type GameBuildTaskStatus = "pending" | "current" | "complete";
 
 export interface GameBuildTask {
@@ -19,6 +21,7 @@ export interface GameBuildPlan {
   gameId: string;
   gameName: string;
   sourceSummary: string;
+  worldSize?: WorldSizeConfig;
   phases: GameBuildPhase[];
   currentTaskId?: string;
   createdAt: string;
