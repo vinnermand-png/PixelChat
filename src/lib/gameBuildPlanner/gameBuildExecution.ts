@@ -5,6 +5,7 @@ type WorldBounds = { minX: number; minY: number; maxX: number; maxY: number };
 type GridPoint = { gx: number; gy: number };
 type StarterArea = { id: string; label: string; bounds: WorldBounds; center: GridPoint };
 type PlayerEntry = { id: string; label: string; gx: number; gy: number; worldId: string; mapId: string };
+type CentralGameplayArea = { id: string; label: string; bounds: WorldBounds; center: GridPoint; worldId: string; mapId: string; starterAreaId: string; playerEntryId: string };
 type TerrainZone = { id: string; label: string; terrainId: TerrainId; bounds: WorldBounds; source: "starter-area" | "world-identity" };
 type TerrainConnection = { id: string; fromZoneId: string; toZoneId: string; type: "transition"; description: string };
 type TerrainPath = { id: string; label: string; fromZoneId: string; toZoneId: string; points: GridPoint[]; terrainId: "dirt" };
@@ -15,6 +16,7 @@ type WorldStructureData = {
   dimensions?: { width: number; height: number; bounds: WorldBounds };
   starterArea?: StarterArea;
   playerEntry?: PlayerEntry;
+  centralGameplayArea?: CentralGameplayArea;
   terrain?: TerrainStructureData;
 };
 type StoredMap = {
@@ -110,6 +112,7 @@ function createPlayableWorld(map: StoredMap, plan: GameBuildPlan): StoredMap {
         dimensions: existing?.dimensions,
         starterArea: existing?.starterArea,
         playerEntry: existing?.playerEntry,
+        centralGameplayArea: existing?.centralGameplayArea,
         terrain: existing?.terrain,
       },
     },
@@ -194,7 +197,7 @@ function definePlayerEntry(map: StoredMap, task: GameBuildTask): StoredMap {
     throw new Error("The persisted player entry point is outside the playable world bounds.");
   }
   if (!pointInBounds({ gx: playerEntry.gx, gy: playerEntry.gy }, starterArea.bounds)) {
-    throw new Error("The persisted player entry point is outside the starter area.");
+    throw new Error("The persisted player entry point must be inside the starter area.");
   }
   if (playerEntry.worldId !== structure.playable.id || playerEntry.mapId !== map.id) {
     throw new Error("The player entry point does not reference the active world and map.");
@@ -207,6 +210,59 @@ function definePlayerEntry(map: StoredMap, task: GameBuildTask): StoredMap {
       structure: {
         ...structure,
         playerEntry,
+      },
+    },
+  };
+}
+
+function defineCentralGameplayArea(map: StoredMap): StoredMap {
+  const structure = map.world.structure;
+  const dimensions = structure?.dimensions;
+  const starterArea = structure?.starterArea;
+  const playerEntry = structure?.playerEntry;
+  if (!structure?.playable || !dimensions || !starterArea || !playerEntry) {
+    throw new Error("Playable world, dimensions, starter area and player entry must exist before the central gameplay area can be defined.");
+  }
+  const entryPoint = { gx: playerEntry.gx, gy: playerEntry.gy };
+  if (!pointInBounds(entryPoint, dimensions.bounds) || !pointInBounds(entryPoint, starterArea.bounds)) {
+    throw new Error("The player entry point must remain valid before the central gameplay area can be defined.");
+  }
+  if (playerEntry.worldId !== structure.playable.id || playerEntry.mapId !== map.id) {
+    throw new Error("The player entry point does not reference the active world and map.");
+  }
+
+  const existing = structure.centralGameplayArea;
+  const centralGameplayArea: CentralGameplayArea = existing ?? {
+    id: crypto.randomUUID(),
+    label: "Central Gameplay Area",
+    bounds: starterArea.bounds,
+    center: starterArea.center,
+    worldId: structure.playable.id,
+    mapId: map.id,
+    starterAreaId: starterArea.id,
+    playerEntryId: playerEntry.id,
+  };
+
+  if (!pointInBounds(centralGameplayArea.center, dimensions.bounds) || !pointInBounds(centralGameplayArea.center, starterArea.bounds)) {
+    throw new Error("The central gameplay area center is outside the existing playable starter area.");
+  }
+  if (!pointInBounds(entryPoint, centralGameplayArea.bounds)) {
+    throw new Error("The central gameplay area must contain the existing player entry point.");
+  }
+  if (centralGameplayArea.worldId !== structure.playable.id || centralGameplayArea.mapId !== map.id) {
+    throw new Error("The central gameplay area does not reference the active world and map.");
+  }
+  if (centralGameplayArea.starterAreaId !== starterArea.id || centralGameplayArea.playerEntryId !== playerEntry.id) {
+    throw new Error("The central gameplay area does not reference the active starter area and player entry.");
+  }
+
+  return {
+    ...map,
+    world: {
+      ...map.world,
+      structure: {
+        ...structure,
+        centralGameplayArea,
       },
     },
   };
@@ -405,6 +461,19 @@ function applyPlayerEntryTask(task: GameBuildTask, map: StoredMap) {
   };
 }
 
+function applyCentralGameplayAreaTask(task: GameBuildTask, map: StoredMap) {
+  if (task.title !== "Define central gameplay area") {
+    throw new Error("Unknown Core Play Area task.");
+  }
+  const next = defineCentralGameplayArea(map);
+  const area = next.world.structure?.centralGameplayArea;
+  if (!area) throw new Error("The central gameplay area was not created.");
+  return {
+    map: next,
+    summary: `Persisted ${area.label.toLowerCase()} at (${area.center.gx}, ${area.center.gy}) within the existing starter area and playable world.`,
+  };
+}
+
 function verifyPlayerEntryPersisted(map: StoredMap) {
   const structure = map.world.structure;
   const dimensions = structure?.dimensions;
@@ -422,21 +491,49 @@ function verifyPlayerEntryPersisted(map: StoredMap) {
   }
 }
 
+function verifyCentralGameplayAreaPersisted(map: StoredMap) {
+  const structure = map.world.structure;
+  const dimensions = structure?.dimensions;
+  const starterArea = structure?.starterArea;
+  const playerEntry = structure?.playerEntry;
+  const area = structure?.centralGameplayArea;
+  if (!structure?.playable || !dimensions || !starterArea || !playerEntry || !area) {
+    throw new Error("Central gameplay area data was not persisted with the required world structure.");
+  }
+  const entryPoint = { gx: playerEntry.gx, gy: playerEntry.gy };
+  if (!pointInBounds(area.center, dimensions.bounds) || !pointInBounds(area.center, starterArea.bounds)) {
+    throw new Error("The persisted central gameplay area center failed playable-world or starter-area validation.");
+  }
+  if (!pointInBounds(entryPoint, area.bounds)) {
+    throw new Error("The persisted central gameplay area does not contain the player entry point.");
+  }
+  if (area.worldId !== structure.playable.id || area.mapId !== map.id) {
+    throw new Error("The persisted central gameplay area does not reference the active world and map.");
+  }
+  if (area.starterAreaId !== starterArea.id || area.playerEntryId !== playerEntry.id) {
+    throw new Error("The persisted central gameplay area does not reference the active starter area and player entry.");
+  }
+}
+
 export function executeCurrentGameBuildTask(plan: GameBuildPlan): GameBuildExecutionResult {
   if (typeof window === "undefined") throw new Error("Game build execution requires the browser GameMaker runtime.");
   const task = findCurrentTask(plan);
   const phase = findCurrentPhase(plan, task);
   const isPlayerEntryPhase = (phase?.id === "core-play-area" || phase?.id === "social-hub") && (task.title === "Define player entry" || task.title === "Define player spawn");
-  if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain" && !isPlayerEntryPhase)) {
-    throw new Error("Execution is currently available for World Structure, Terrain and the first player-entry task only.");
+  const isCentralGameplayAreaPhase = phase?.id === "core-play-area" && task.title === "Define central gameplay area";
+  if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain" && !isPlayerEntryPhase && !isCentralGameplayAreaPhase)) {
+    throw new Error("Execution is currently available for World Structure, Terrain, player entry and central gameplay area tasks only.");
   }
   const map = readCurrentMap();
   const action = phase.id === "world-structure"
     ? applyWorldStructureTask(plan, task, map)
     : phase.id === "terrain"
       ? applyTerrainTask(plan, task, map)
-      : applyPlayerEntryTask(task, map);
+      : isPlayerEntryPhase
+        ? applyPlayerEntryTask(task, map)
+        : applyCentralGameplayAreaTask(task, map);
   const persisted = writeAndLoadMap(action.map);
   if (isPlayerEntryPhase) verifyPlayerEntryPersisted(persisted);
+  if (isCentralGameplayAreaPhase) verifyCentralGameplayAreaPersisted(persisted);
   return { taskId: task.id, summary: action.summary };
 }
