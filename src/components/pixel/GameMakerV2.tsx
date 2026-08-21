@@ -108,7 +108,20 @@ export default function GameMakerV2() {
   const loadSavedMap = () => { const raw = localStorage.getItem(MAP_STORAGE_KEY); if (!raw) { setSavedMapName(null); setMapStatus("No saved map"); return; } try { const parsed: unknown = JSON.parse(raw); if (!isValidMap(parsed)) throw new Error(); loadMapData(parsed); } catch { setSavedMapName(null); setMapStatus("Saved map load failed"); } };
   const enterPlayMode = () => { const first = Object.keys(world.terrain).map((key) => key.split(",").map(Number)).find(([gx, gy]) => inBounds(gx, gy, world.gridSize) && !isCellBlocked(objects, gx, gy)); if (!first) { setMapStatus("Paint free terrain before starting Play Test"); return; } setSelectedObjectId(null); setHover(null); setPlayer((current) => current && world.terrain[cellKey(current.gx, current.gy)] && !isCellBlocked(objects, current.gx, current.gy) ? current : { gx: first[0], gy: first[1] }); setMode("play"); };
   const clearWorld = () => { if (mode !== "edit" || !window.confirm("Clear the entire world?")) return; commitChange({ gridSize: world.gridSize, terrain: {} }, []); setPlayer(null); setSelectedObjectId(null); setMapStatus(unsavedMapStatus()); };
-  useEffect(() => { refreshSavedMapInfo(); }, []);
+  useEffect(() => {
+    const raw = localStorage.getItem(MAP_STORAGE_KEY);
+    if (!raw) {
+      refreshSavedMapInfo();
+      return;
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!isValidMap(parsed)) throw new Error();
+      loadMapData(parsed);
+    } catch {
+      refreshSavedMapInfo();
+    }
+  }, []);
   useEffect(() => { if (mapStatus === "Not saved") setMapStatus(unsavedMapStatus()); }, [mapStatus, savedMapName]);
   useEffect(() => { const handler = (event: KeyboardEvent) => { if (mode !== "play" || !player) return; const key = event.key.toLowerCase(); const delta = key === "arrowup" || key === "w" ? { gx: 0, gy: -1 } : key === "arrowdown" || key === "s" ? { gx: 0, gy: 1 } : key === "arrowleft" || key === "a" ? { gx: -1, gy: 0 } : key === "arrowright" || key === "d" ? { gx: 1, gy: 0 } : null; if (!delta) return; event.preventDefault(); const gx = player.gx + delta.gx, gy = player.gy + delta.gy; if (!world.terrain[cellKey(gx, gy)] || isCellBlocked(objects, gx, gy)) return; setPlayer({ gx, gy }); }; window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); }, [mode, player, world.terrain, objects]);
   useEffect(() => { let active = true; const cleanups = ASSET_LIBRARY.map((asset) => { const image = getAssetSpriteImage(asset); if (!image || (image.complete && image.naturalWidth)) return null; const onLoad = () => { if (active) setAssetSpriteVersion((version) => version + 1); }; image.addEventListener("load", onLoad, { once: true }); return () => image.removeEventListener("load", onLoad); }); return () => { active = false; cleanups.forEach((cleanup) => cleanup?.()); }; }, []);

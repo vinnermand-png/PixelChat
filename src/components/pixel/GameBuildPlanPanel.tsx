@@ -18,16 +18,26 @@ export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: Game
   const currentPhase = plan?.phases.find((phase) => phase.tasks.some((task) => task.id === currentTask?.id));
   const isComplete = Boolean(plan && tasks.length && tasks.every((task) => task.status === "complete"));
   const isPlayerEntryTask = currentTask?.title === "Define player entry" || currentTask?.title === "Define player spawn";
+  const isKeyLocationsTask = currentTask?.title === "Define key locations" || currentTask?.title === "Define key social locations";
   const isCentralGameplayAreaTask = currentTask?.title === "Define central gameplay area";
+  const isAdditionalExplorableZonesTask = currentTask?.title === "Define additional explorable zones";
   const isImportantLandmarksTask = currentTask?.title === "Define important landmarks";
+  const isTerrainAssetsTask = currentTask?.title === "Determine terrain assets";
+  const isObjectTask = currentTask?.title === "Determine objects";
+  const isDecorationTask = currentTask?.title === "Determine decorations";
   const canExecute = Boolean(
     currentTask
       && (
         currentPhase?.id === "world-structure"
         || currentPhase?.id === "terrain"
         || ((currentPhase?.id === "core-play-area" || currentPhase?.id === "social-hub") && isPlayerEntryTask)
+        || ((currentPhase?.id === "core-play-area" || currentPhase?.id === "social-hub") && isKeyLocationsTask)
         || (currentPhase?.id === "core-play-area" && isCentralGameplayAreaTask)
+        || (currentPhase?.id === "world-areas" && isAdditionalExplorableZonesTask)
         || (currentPhase?.id === "world-areas" && isImportantLandmarksTask)
+        || (currentPhase?.id === "assets" && isTerrainAssetsTask)
+        || (currentPhase?.id === "assets" && isObjectTask)
+        || (currentPhase?.id === "assets" && isDecorationTask)
       )
       && !isComplete,
   );
