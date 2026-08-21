@@ -4,347 +4,70 @@ import GameCreationDialog from "@/components/pixel/GameCreationDialog";
 import GameDiscoveryPanel from "@/components/pixel/GameDiscoveryPanel";
 import GameFoundationInspector from "@/components/pixel/GameFoundationInspector";
 import GameMakerV2 from "@/components/pixel/GameMakerV2";
-import {
-  addDiscoveryQuestion,
-  completeDiscovery,
-  startDiscovery,
-  submitDiscoveryAnswer,
-  updateDiscoveryUnderstanding,
-} from "@/lib/gameDiscovery/gameDiscoveryApi";
-import type {
-  GameDiscoveryQuestionCategory,
-  GameDiscoverySession,
-  GameDiscoveryUnderstanding,
-} from "@/lib/gameDiscovery/gameDiscovery";
-import {
-  createFoundationDnaVersion,
-  moveFoundationToDraft,
-  moveFoundationToReview,
-  updateFoundationBlueprint,
-} from "@/lib/gameFoundation/gameFoundationApi";
+import { addDiscoveryQuestion, completeDiscovery, startDiscovery, submitDiscoveryAnswer, updateDiscoveryUnderstanding } from "@/lib/gameDiscovery/gameDiscoveryApi";
+import type { GameDiscoveryQuestionCategory, GameDiscoverySession, GameDiscoveryUnderstanding } from "@/lib/gameDiscovery/gameDiscovery";
+import { createFoundationDnaVersion, moveFoundationToDraft, moveFoundationToReview, updateFoundationBlueprint } from "@/lib/gameFoundation/gameFoundationApi";
 import type { GameFoundation } from "@/lib/gameFoundation/gameFoundation";
 
-const DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD = {
-  game_type: "gameType",
-  core_experience: "coreExperience",
-  player_activity: "playerActivity",
-  world: "worldConcept",
-  social: "socialInteraction",
-  progression: "progression",
-  goals: "gameplayGoals",
-} as const satisfies Partial<
-  Record<
-    GameDiscoveryQuestionCategory,
-    keyof Omit<GameDiscoveryUnderstanding, "additionalNotes">
-  >
->;
+const DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD = { game_type: "gameType", core_experience: "coreExperience", player_activity: "playerActivity", world: "worldConcept", social: "socialInteraction", progression: "progression", goals: "gameplayGoals" } as const satisfies Partial<Record<GameDiscoveryQuestionCategory, keyof Omit<GameDiscoveryUnderstanding, "additionalNotes">>>;
+const DIRECT_DISCOVERY_CATEGORY_LABELS: Record<Exclude<GameDiscoveryQuestionCategory, "visual_direction">, string> = { game_type: "Game Type", core_experience: "Core Experience", player_activity: "Player Activity", world: "World Concept", social: "Social Interaction", progression: "Progression", goals: "Gameplay Goals", other: "Additional Notes" };
+const WORKFLOW_STEPS = ["CREATE GAME", "DISCOVERY", "FOUNDATION", "GAME DNA", "REVIEW", "START BUILD"] as const;
+type DiscoveryUnderstandingField = (typeof DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD)[keyof typeof DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD];
 
-const DIRECT_DISCOVERY_CATEGORY_LABELS: Record<
-  Exclude<GameDiscoveryQuestionCategory, "visual_direction">,
-  string
-> = {
-  game_type: "Game Type",
-  core_experience: "Core Experience",
-  player_activity: "Player Activity",
-  world: "World Concept",
-  social: "Social Interaction",
-  progression: "Progression",
-  goals: "Gameplay Goals",
-  other: "Additional Notes",
-};
-
-const WORKFLOW_STEPS = [
-  "CREATE GAME",
-  "DISCOVERY",
-  "FOUNDATION",
-  "GAME DNA",
-  "REVIEW",
-  "START BUILD",
-] as const;
-
-type DiscoveryUnderstandingField =
-  (typeof DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD)[keyof typeof DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD];
-
-function normalizeDiscoveryCategory(
-  category: GameDiscoveryQuestionCategory | string,
-): GameDiscoveryQuestionCategory | undefined {
-  const normalized = category
-    .trim()
-    .toLowerCase()
-    .replace(/[\s-]+/g, "_");
-
-  switch (normalized) {
-    case "game_type": return "game_type";
-    case "core_experience": return "core_experience";
-    case "player_activity": return "player_activity";
-    case "world":
-    case "world_concept": return "world";
-    case "social":
-    case "social_interaction": return "social";
-    case "progression": return "progression";
-    case "goals":
-    case "gameplay_goals": return "goals";
-    case "visual_direction": return "visual_direction";
-    case "other":
-    case "additional_notes": return "other";
-    default: return undefined;
+function normalizeDiscoveryCategory(category: GameDiscoveryQuestionCategory | string): GameDiscoveryQuestionCategory | undefined {
+  switch (category.trim().toLowerCase().replace(/[\s-]+/g, "_")) {
+    case "game_type": return "game_type"; case "core_experience": return "core_experience"; case "player_activity": return "player_activity";
+    case "world": case "world_concept": return "world"; case "social": case "social_interaction": return "social";
+    case "progression": return "progression"; case "goals": case "gameplay_goals": return "goals";
+    case "visual_direction": return "visual_direction"; case "other": case "additional_notes": return "other"; default: return undefined;
   }
 }
-
-function joinDiscoveryAnswers(session: GameDiscoverySession, category: GameDiscoveryQuestionCategory): string | undefined {
-  const answers = session.questions
-    .filter((question) => normalizeDiscoveryCategory(question.category) === category && question.status === "answered" && question.answer?.trim())
-    .map((question) => question.answer!.trim());
-  return answers.length > 0 ? answers.join("\n") : undefined;
+function joinDiscoveryAnswers(session: GameDiscoverySession, category: GameDiscoveryQuestionCategory) {
+  const answers = session.questions.filter((q) => normalizeDiscoveryCategory(q.category) === category && q.status === "answered" && q.answer?.trim()).map((q) => q.answer!.trim());
+  return answers.length ? answers.join("\n") : undefined;
 }
-
 function buildDiscoveryUnderstanding(session: GameDiscoverySession): Partial<GameDiscoveryUnderstanding> {
   const understanding: Partial<GameDiscoveryUnderstanding> = {};
-  for (const [category, field] of Object.entries(DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD) as [GameDiscoveryQuestionCategory, DiscoveryUnderstandingField][]) {
-    const answer = joinDiscoveryAnswers(session, category);
-    if (answer) understanding[field] = answer;
-  }
-  const notes = [
-    joinDiscoveryAnswers(session, "visual_direction") ? `Visual Direction: ${joinDiscoveryAnswers(session, "visual_direction")}` : undefined,
-    joinDiscoveryAnswers(session, "other") ? `Additional Notes: ${joinDiscoveryAnswers(session, "other")}` : undefined,
-  ].filter((note): note is string => Boolean(note));
-  if (notes.length > 0) understanding.additionalNotes = notes.join("\n\n");
-  return understanding;
+  for (const [category, field] of Object.entries(DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD) as [GameDiscoveryQuestionCategory, DiscoveryUnderstandingField][]) { const answer = joinDiscoveryAnswers(session, category); if (answer) understanding[field] = answer; }
+  const notes = [joinDiscoveryAnswers(session, "visual_direction") ? `Visual Direction: ${joinDiscoveryAnswers(session, "visual_direction")}` : undefined, joinDiscoveryAnswers(session, "other") ? `Additional Notes: ${joinDiscoveryAnswers(session, "other")}` : undefined].filter((n): n is string => Boolean(n));
+  if (notes.length) understanding.additionalNotes = notes.join("\n\n"); return understanding;
 }
-
-function joinDefined(values: Array<string | undefined>): string | undefined {
-  const defined = values.filter((value): value is string => Boolean(value?.trim()));
-  return defined.length > 0 ? defined.join("\n\n") : undefined;
-}
-
+function joinDefined(values: Array<string | undefined>) { const defined = values.filter((v): v is string => Boolean(v?.trim())); return defined.length ? defined.join("\n\n") : undefined; }
 function buildInitialGameDna(foundation: GameFoundation, session: GameDiscoverySession) {
-  const understanding = session.understanding;
-  const visualDirection = joinDiscoveryAnswers(session, "visual_direction");
-  return {
-    id: crypto.randomUUID(),
-    version: "v1.0",
-    creativeAnchor: foundation.blueprint.concept ?? session.originalConcept,
-    coreIdentity: joinDefined([understanding.gameType, understanding.coreExperience, foundation.blueprint.coreExperience]),
-    emotionalIdentity: joinDefined([understanding.gameplayGoals, foundation.blueprint.coreLoop]),
-    worldIdentity: understanding.worldConcept,
-    visualIdentity: visualDirection,
-    assetIdentity: joinDefined([understanding.playerActivity, understanding.socialInteraction, understanding.progression]),
-  };
+  const u = session.understanding; const visualDirection = joinDiscoveryAnswers(session, "visual_direction");
+  return { id: crypto.randomUUID(), version: "v1.0", creativeAnchor: foundation.blueprint.concept ?? session.originalConcept, coreIdentity: joinDefined([u.gameType, u.coreExperience, foundation.blueprint.coreExperience]), emotionalIdentity: joinDefined([u.gameplayGoals, foundation.blueprint.coreLoop]), worldIdentity: u.worldConcept, visualIdentity: visualDirection, assetIdentity: joinDefined([u.playerActivity, u.socialInteraction, u.progression]) };
 }
-
-function upsertDirectDiscoveryAnswer(
-  session: GameDiscoverySession,
-  category: Exclude<GameDiscoveryQuestionCategory, "visual_direction">,
-  answer: string,
-): GameDiscoverySession {
-  const existingQuestion = session.questions.find(
-    (question) => normalizeDiscoveryCategory(question.category) === category,
-  );
-  const trimmedAnswer = answer.trim();
-
-  if (!existingQuestion && !trimmedAnswer) return session;
-  if (existingQuestion) return submitDiscoveryAnswer(session, existingQuestion.id, answer);
-
-  const sessionWithQuestion = addDiscoveryQuestion(session, {
-    id: crypto.randomUUID(),
-    category,
-    question: DIRECT_DISCOVERY_CATEGORY_LABELS[category],
-    importance: "required",
-  });
-
-  return submitDiscoveryAnswer(sessionWithQuestion, sessionWithQuestion.questions.at(-1)!.id, answer);
+function upsertDirectDiscoveryAnswer(session: GameDiscoverySession, category: Exclude<GameDiscoveryQuestionCategory, "visual_direction">, answer: string) {
+  const existing = session.questions.find((q) => normalizeDiscoveryCategory(q.category) === category); const trimmed = answer.trim();
+  if (!existing && !trimmed) return session; if (existing) return submitDiscoveryAnswer(session, existing.id, answer);
+  const withQuestion = addDiscoveryQuestion(session, { id: crypto.randomUUID(), category, question: DIRECT_DISCOVERY_CATEGORY_LABELS[category], importance: "required" });
+  return submitDiscoveryAnswer(withQuestion, withQuestion.questions.at(-1)!.id, answer);
 }
 
 function GameMakerRoute() {
-  const [isCreateGameOpen, setIsCreateGameOpen] = useState(false);
-  const [isFoundationInspectorOpen, setIsFoundationInspectorOpen] = useState(false);
-  const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
-  const [isReviewCompleted, setIsReviewCompleted] = useState(false);
-  const [isBuildStarted, setIsBuildStarted] = useState(false);
-  const [activeFoundation, setActiveFoundation] = useState<GameFoundation | null>(null);
-  const [discoverySession, setDiscoverySession] = useState<GameDiscoverySession | null>(null);
-
-  const handleStartDiscovery = () => {
-    if (!activeFoundation) return;
-    if (discoverySession) {
-      setIsDiscoveryOpen(true);
-      return;
-    }
-    setDiscoverySession(startDiscovery({ id: crypto.randomUUID(), foundation: activeFoundation }));
-    setIsDiscoveryOpen(true);
-  };
-
-  const handleCompleteDiscovery = () => {
-    if (!discoverySession || !activeFoundation) return;
-    if (discoverySession.questions.some((question) => question.status === "pending")) return;
-
-    const understanding = buildDiscoveryUnderstanding(discoverySession);
-    const sessionWithUnderstanding = updateDiscoveryUnderstanding(discoverySession, understanding);
-    const completedSession = completeDiscovery(sessionWithUnderstanding);
-    const updatedFoundation = updateFoundationBlueprint(activeFoundation, {
-      concept: sessionWithUnderstanding.originalConcept,
-      coreExperience: sessionWithUnderstanding.understanding.coreExperience,
-      coreLoop: sessionWithUnderstanding.understanding.gameplayGoals,
-      playerMode: sessionWithUnderstanding.understanding.playerActivity,
-    });
-
-    setDiscoverySession(completedSession);
-    setActiveFoundation(updatedFoundation.status === "discovery" ? moveFoundationToDraft(updatedFoundation) : updatedFoundation);
-    setIsReviewCompleted(false);
-    setIsBuildStarted(false);
-    setIsDiscoveryOpen(false);
-  };
-
-  const handleGenerateGameDna = () => {
-    if (!activeFoundation || !discoverySession) return;
-    if (discoverySession.status !== "complete" || activeFoundation.status !== "draft" || activeFoundation.dnaVersions.length > 0) return;
-    const foundationWithDna = createFoundationDnaVersion(activeFoundation, buildInitialGameDna(activeFoundation, discoverySession));
-    setActiveFoundation(moveFoundationToReview(foundationWithDna));
-    setIsReviewCompleted(false);
-    setIsBuildStarted(false);
-  };
-
-  const isDiscoveryComplete = discoverySession?.status === "complete";
-  const latestDna = activeFoundation?.dnaVersions.at(-1);
-  const canGenerateGameDna = Boolean(isDiscoveryComplete && activeFoundation?.status === "draft" && activeFoundation.dnaVersions.length === 0);
-
-  const currentStep = useMemo(() => {
-    if (!activeFoundation) return 1;
-    if (!isDiscoveryComplete) return 2;
-    if (!latestDna) return 3;
-    if (!isReviewCompleted) return 5;
-    return 6;
-  }, [activeFoundation, isDiscoveryComplete, latestDna, isReviewCompleted]);
-
+  const [isCreateGameOpen, setIsCreateGameOpen] = useState(false); const [isFoundationInspectorOpen, setIsFoundationInspectorOpen] = useState(false); const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
+  const [isReviewCompleted, setIsReviewCompleted] = useState(false); const [isBuildStarted, setIsBuildStarted] = useState(false); const [isDnaExpanded, setIsDnaExpanded] = useState(false);
+  const [activeFoundation, setActiveFoundation] = useState<GameFoundation | null>(null); const [discoverySession, setDiscoverySession] = useState<GameDiscoverySession | null>(null);
+  const handleStartDiscovery = () => { if (!activeFoundation) return; if (discoverySession) { setIsDiscoveryOpen(true); return; } setDiscoverySession(startDiscovery({ id: crypto.randomUUID(), foundation: activeFoundation })); setIsDiscoveryOpen(true); };
+  const handleCompleteDiscovery = () => { if (!discoverySession || !activeFoundation || discoverySession.questions.some((q) => q.status === "pending")) return; const withUnderstanding = updateDiscoveryUnderstanding(discoverySession, buildDiscoveryUnderstanding(discoverySession)); const completed = completeDiscovery(withUnderstanding); const updated = updateFoundationBlueprint(activeFoundation, { concept: withUnderstanding.originalConcept, coreExperience: withUnderstanding.understanding.coreExperience, coreLoop: withUnderstanding.understanding.gameplayGoals, playerMode: withUnderstanding.understanding.playerActivity }); setDiscoverySession(completed); setActiveFoundation(updated.status === "discovery" ? moveFoundationToDraft(updated) : updated); setIsReviewCompleted(false); setIsBuildStarted(false); setIsDnaExpanded(false); setIsDiscoveryOpen(false); };
+  const handleGenerateGameDna = () => { if (!activeFoundation || !discoverySession || discoverySession.status !== "complete" || activeFoundation.status !== "draft" || activeFoundation.dnaVersions.length) return; setActiveFoundation(moveFoundationToReview(createFoundationDnaVersion(activeFoundation, buildInitialGameDna(activeFoundation, discoverySession)))); setIsReviewCompleted(false); setIsBuildStarted(false); setIsDnaExpanded(true); };
+  const isDiscoveryComplete = discoverySession?.status === "complete"; const latestDna = activeFoundation?.dnaVersions.at(-1); const canGenerateGameDna = Boolean(isDiscoveryComplete && activeFoundation?.status === "draft" && activeFoundation.dnaVersions.length === 0);
+  const currentStep = useMemo(() => { if (!activeFoundation) return 1; if (!isDiscoveryComplete) return 2; if (!latestDna) return 3; if (!isReviewCompleted) return 5; return 6; }, [activeFoundation, isDiscoveryComplete, latestDna, isReviewCompleted]);
   const openFoundationReview = () => setIsFoundationInspectorOpen(true);
-
-  const primaryAction = (() => {
-    if (!activeFoundation) return { label: "CREATE GAME", action: () => setIsCreateGameOpen(true), step: 1 };
-    if (!isDiscoveryComplete) return { label: discoverySession ? "CONTINUE DISCOVERY" : "START DISCOVERY", action: handleStartDiscovery, step: 2 };
-    if (!latestDna && canGenerateGameDna) return { label: "GENERATE GAME DNA", action: handleGenerateGameDna, step: 4 };
-    if (latestDna && !isReviewCompleted) return { label: "REVIEW FOUNDATION", action: openFoundationReview, step: 5 };
-    return { label: isBuildStarted ? "GAME BUILD STARTED" : "START GAME BUILD", action: () => setIsBuildStarted(true), step: 6 };
-  })();
-
-  return (
-    <div className="flex min-h-screen flex-col bg-[#090f18] text-white">
-      <header className="border-b border-white/10 bg-[#0b111c] px-4 py-4">
-        <div className="mx-auto max-w-[1800px]">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#6ee7d8]">Game Creation Progress</p>
-              <h1 className="mt-1 text-sm font-semibold">{activeFoundation ? activeFoundation.game.name : "Create your game"}</h1>
-            </div>
-            {activeFoundation ? (
-              <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-wide">
-                {isDiscoveryComplete ? <button type="button" onClick={handleStartDiscovery} className="rounded border border-white/10 px-2.5 py-1.5 text-white/60 hover:border-[#c084fc] hover:text-[#c084fc]">Open Discovery</button> : null}
-                <button type="button" onClick={openFoundationReview} className="rounded border border-white/10 px-2.5 py-1.5 text-white/60 hover:border-[#6ee7d8] hover:text-[#6ee7d8]">Foundation</button>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
-            {WORKFLOW_STEPS.map((label, index) => {
-              const step = index + 1;
-              const isComplete = step < currentStep;
-              const isCurrent = step === currentStep;
-              const canReview = activeFoundation && step <= currentStep && step < 6;
-              const onClick = canReview
-                ? step === 1
-                  ? () => setIsCreateGameOpen(true)
-                  : step === 2
-                    ? handleStartDiscovery
-                    : openFoundationReview
-                : undefined;
-
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={onClick}
-                  disabled={!canReview}
-                  className={`flex min-h-14 items-center gap-3 rounded border px-3 py-2 text-left transition ${isCurrent ? "border-[#a9df5a] bg-[#172319] shadow-[0_0_18px_rgba(169,223,90,0.08)]" : isComplete ? "border-[#6ee7d8]/40 bg-[#0e1720] hover:border-[#6ee7d8]" : "cursor-not-allowed border-white/5 bg-black/10 opacity-45"}`}
-                >
-                  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border text-[10px] font-bold ${isCurrent ? "border-[#a9df5a] bg-[#a9df5a]/10 text-[#a9df5a]" : isComplete ? "border-[#6ee7d8] text-[#6ee7d8]" : "border-white/20 text-white/40"}`}>{isComplete ? "✓" : step}</span>
-                  <span className="min-w-0">
-                    <span className={`block text-[10px] font-bold uppercase tracking-wide ${isCurrent ? "text-[#a9df5a]" : isComplete ? "text-[#6ee7d8]" : "text-white/50"}`}>{label}</span>
-                    <span className="mt-0.5 block text-[9px] uppercase tracking-wide text-white/35">{isCurrent ? "Current" : isComplete ? "Complete" : "Upcoming"}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-4 flex flex-col gap-3 rounded border border-[#a9df5a]/20 bg-[#0d1713] p-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#a9df5a]">Step {currentStep} of 6</p>
-              <p className="mt-1 text-xs text-white/70">{latestDna && !isReviewCompleted ? "GAME DNA GENERATED · Review your Foundation and Game DNA before starting the game build." : `NEXT ACTION · ${primaryAction.label}`}</p>
-            </div>
-            <button type="button" onClick={primaryAction.action} className="rounded border border-[#a9df5a] bg-[#172319] px-5 py-3 text-xs font-bold uppercase tracking-wide text-[#c8f28d] hover:bg-[#20301f]">
-              {primaryAction.label}
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {latestDna ? (
-        <section className="border-b border-[#fbbf24]/20 bg-[#100e0a] px-4 py-5">
-          <div className="mx-auto max-w-[1800px]">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#fbbf24]">Game DNA · {latestDna.version}</p>
-                <h2 className="mt-1 text-sm font-semibold text-[#f8edc2]">GAME DNA GENERATED</h2>
-              </div>
-              <span className="rounded border border-[#fbbf24]/40 px-2 py-1 text-[10px] uppercase tracking-wide text-[#fbbf24]">{latestDna.status}</span>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              {[
-                ["CREATIVE ANCHOR", latestDna.creativeAnchor, "Overall creative direction and the central idea holding the game together."],
-                ["CORE IDENTITY", latestDna.coreIdentity, "What the game fundamentally is."],
-                ["EMOTIONAL IDENTITY", latestDna.emotionalIdentity, "How the player should feel and why they return."],
-                ["WORLD IDENTITY", latestDna.worldIdentity, "What the world is and how it functions."],
-                ["VISUAL IDENTITY", latestDna.visualIdentity, "Visual style and artistic direction."],
-                ["ASSET IDENTITY", latestDna.assetIdentity, "Important player activity, systems and asset direction."],
-              ].map(([title, value, hint]) => (
-                <article key={title} className="min-w-0 rounded border border-[#fbbf24]/20 bg-[#151109] p-4">
-                  <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#fbbf24]">{title}</h3>
-                  <p className="mt-2 break-words whitespace-pre-wrap text-xs leading-6 text-[#f8edc2]">{value || "Not defined yet."}</p>
-                  <p className="mt-3 border-t border-white/5 pt-2 text-[10px] leading-4 text-white/35">{hint}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      <GameMakerV2 />
-
-      {isCreateGameOpen ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><GameCreationDialog onCancel={() => setIsCreateGameOpen(false)} onGameCreated={(foundation) => { setActiveFoundation(foundation); setDiscoverySession(null); setIsDiscoveryOpen(false); setIsReviewCompleted(false); setIsBuildStarted(false); setIsCreateGameOpen(false); }} /></div> : null}
-      {isFoundationInspectorOpen ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><GameFoundationInspector foundation={activeFoundation} onClose={() => { setIsFoundationInspectorOpen(false); if (latestDna) setIsReviewCompleted(true); }} /></div> : null}
-      {isDiscoveryOpen && activeFoundation && discoverySession ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <GameDiscoveryPanel
-            foundation={activeFoundation}
-            session={discoverySession}
-            onUpdateCategoryAnswer={(category, answer) => {
-              if (category === "visual_direction") return;
-              setDiscoverySession((current) => current ? upsertDirectDiscoveryAnswer(current, category, answer) : current);
-            }}
-            onComplete={handleCompleteDiscovery}
-            onClose={() => setIsDiscoveryOpen(false)}
-          />
-        </div>
-      ) : null}
-    </div>
-  );
+  const primaryAction = !activeFoundation ? { label: "CREATE GAME", action: () => setIsCreateGameOpen(true) } : !isDiscoveryComplete ? { label: discoverySession ? "CONTINUE DISCOVERY" : "START DISCOVERY", action: handleStartDiscovery } : !latestDna && canGenerateGameDna ? { label: "GENERATE GAME DNA", action: handleGenerateGameDna } : latestDna && !isReviewCompleted ? { label: "REVIEW FOUNDATION", action: openFoundationReview } : { label: isBuildStarted ? "GAME BUILD STARTED" : "START GAME BUILD", action: () => { setIsBuildStarted(true); setIsDnaExpanded(false); } };
+  const dnaSections = [["CREATIVE ANCHOR", latestDna?.creativeAnchor, "Overall creative direction and the central idea holding the game together."], ["CORE IDENTITY", latestDna?.coreIdentity, "What the game fundamentally is."], ["EMOTIONAL IDENTITY", latestDna?.emotionalIdentity, "How the player should feel and why they return."], ["WORLD IDENTITY", latestDna?.worldIdentity, "What the world is and how it functions."], ["VISUAL IDENTITY", latestDna?.visualIdentity, "Visual style and artistic direction."], ["ASSET IDENTITY", latestDna?.assetIdentity, "Important player activity, systems and asset direction."]];
+  const showCompactDna = Boolean(latestDna && isBuildStarted && !isDnaExpanded);
+  return <div className="flex min-h-screen flex-col bg-[#090f18] text-white">
+    <header className="border-b border-white/10 bg-[#0b111c] px-4 py-4"><div className="mx-auto max-w-[1800px]">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#6ee7d8]">Game Creation Progress</p><h1 className="mt-1 text-sm font-semibold">{activeFoundation ? activeFoundation.game.name : "Create your game"}</h1></div>{activeFoundation ? <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-wide">{isDiscoveryComplete ? <button type="button" onClick={handleStartDiscovery} className="rounded border border-white/10 px-2.5 py-1.5 text-white/60 hover:border-[#c084fc] hover:text-[#c084fc]">Open Discovery</button> : null}<button type="button" onClick={openFoundationReview} className="rounded border border-white/10 px-2.5 py-1.5 text-white/60 hover:border-[#6ee7d8] hover:text-[#6ee7d8]">Foundation</button></div> : null}</div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">{WORKFLOW_STEPS.map((label, index) => { const step = index + 1; const isComplete = step < currentStep; const isCurrent = step === currentStep; const canReview = Boolean(activeFoundation && step <= currentStep && step < 6); const onClick = canReview ? step === 1 ? () => setIsCreateGameOpen(true) : step === 2 ? handleStartDiscovery : openFoundationReview : undefined; return <button key={label} type="button" onClick={onClick} disabled={!canReview} className={`flex min-h-14 items-center gap-3 rounded border px-3 py-2 text-left transition ${isCurrent ? "border-[#a9df5a] bg-[#172319] shadow-[0_0_18px_rgba(169,223,90,0.08)]" : isComplete ? "border-[#6ee7d8]/40 bg-[#0e1720] hover:border-[#6ee7d8]" : "cursor-not-allowed border-white/5 bg-black/10 opacity-45"}`}><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border text-[10px] font-bold ${isCurrent ? "border-[#a9df5a] bg-[#a9df5a]/10 text-[#a9df5a]" : isComplete ? "border-[#6ee7d8] text-[#6ee7d8]" : "border-white/20 text-white/40"}`}>{isComplete ? "✓" : step}</span><span className="min-w-0"><span className={`block text-[10px] font-bold uppercase tracking-wide ${isCurrent ? "text-[#a9df5a]" : isComplete ? "text-[#6ee7d8]" : "text-white/50"}`}>{label}</span><span className="mt-0.5 block text-[9px] uppercase tracking-wide text-white/35">{isCurrent ? "Current" : isComplete ? "Complete" : "Upcoming"}</span></span></button>; })}</div>
+      <div className="mt-4 flex flex-col gap-3 rounded border border-[#a9df5a]/20 bg-[#0d1713] p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#a9df5a]">Step {currentStep} of 6</p><p className="mt-1 text-xs text-white/70">{latestDna && !isReviewCompleted ? "GAME DNA GENERATED · Review your Foundation and Game DNA before starting the game build." : `NEXT ACTION · ${primaryAction.label}`}</p></div><button type="button" onClick={primaryAction.action} className="rounded border border-[#a9df5a] bg-[#172319] px-5 py-3 text-xs font-bold uppercase tracking-wide text-[#c8f28d] hover:bg-[#20301f]">{primaryAction.label}</button></div>
+    </div></header>
+    {latestDna ? showCompactDna ? <section className="border-b border-[#fbbf24]/20 bg-[#100e0a] px-4 py-3"><div className="mx-auto flex max-w-[1800px] flex-wrap items-center justify-between gap-3 rounded border border-[#fbbf24]/20 bg-[#151109] px-4 py-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#fbbf24]">Game DNA · {latestDna.version}</p><p className="mt-1 text-xs text-[#f8edc2]">{activeFoundation?.game.name} · Active DNA · Foundation Ready</p></div><button type="button" onClick={() => setIsDnaExpanded(true)} className="rounded border border-[#fbbf24]/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-[#fbbf24] hover:bg-[#fbbf24]/10">VIEW GAME DNA ▼</button></div></section> : <section className="border-b border-[#fbbf24]/20 bg-[#100e0a] px-4 py-5"><div className="mx-auto max-w-[1800px]"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#fbbf24]">Game DNA · {latestDna.version}</p><h2 className="mt-1 text-sm font-semibold text-[#f8edc2]">GAME DNA GENERATED</h2></div><div className="flex items-center gap-2"><span className="rounded border border-[#fbbf24]/40 px-2 py-1 text-[10px] uppercase tracking-wide text-[#fbbf24]">{latestDna.status}</span>{isBuildStarted ? <button type="button" onClick={() => setIsDnaExpanded(false)} className="rounded border border-white/10 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-white/60 hover:border-[#fbbf24]/50 hover:text-[#fbbf24]">HIDE GAME DNA ▲</button> : null}</div></div><div className="grid gap-3 md:grid-cols-2">{dnaSections.map(([title, value, hint]) => <article key={title} className="min-w-0 rounded border border-[#fbbf24]/20 bg-[#151109] p-4"><h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#fbbf24]">{title}</h3><p className="mt-2 break-words whitespace-pre-wrap text-xs leading-6 text-[#f8edc2]">{value || "Not defined yet."}</p><p className="mt-3 border-t border-white/5 pt-2 text-[10px] leading-4 text-white/35">{hint}</p></article>)}</div></div></section> : null}
+    <GameMakerV2 />
+    {isCreateGameOpen ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><GameCreationDialog onCancel={() => setIsCreateGameOpen(false)} onGameCreated={(foundation) => { setActiveFoundation(foundation); setDiscoverySession(null); setIsDiscoveryOpen(false); setIsReviewCompleted(false); setIsBuildStarted(false); setIsDnaExpanded(false); setIsCreateGameOpen(false); }} /></div> : null}
+    {isFoundationInspectorOpen ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><GameFoundationInspector foundation={activeFoundation} onClose={() => { setIsFoundationInspectorOpen(false); if (latestDna) setIsReviewCompleted(true); }} /></div> : null}
+    {isDiscoveryOpen && activeFoundation && discoverySession ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><GameDiscoveryPanel foundation={activeFoundation} session={discoverySession} onUpdateCategoryAnswer={(category, answer) => { if (category === "visual_direction") return; setDiscoverySession((current) => current ? upsertDirectDiscoveryAnswer(current, category, answer) : current); }} onComplete={handleCompleteDiscovery} onClose={() => setIsDiscoveryOpen(false)} /></div> : null}
+  </div>;
 }
-
-export const Route = createFileRoute("/game-maker")({
-  head: () => ({
-    meta: [
-      { title: "PixelChat Game Maker V2" },
-      { name: "description", content: "PixelChat isometric world editor V2." },
-    ],
-  }),
-  component: GameMakerRoute,
-});
+export const Route = createFileRoute("/game-maker")({ head: () => ({ meta: [{ title: "PixelChat Game Maker V2" }, { name: "description", content: "PixelChat isometric world editor V2." }] }), component: GameMakerRoute });
