@@ -1,13 +1,14 @@
 import { useState } from "react";
 import type { GameBuildPlan } from "@/lib/gameBuildPlanner/gameBuildPlan";
+import { executeCurrentGameBuildTask } from "@/lib/gameBuildPlanner/gameBuildExecution";
 
 interface GameBuildPlanPanelProps {
   plan: GameBuildPlan | null;
   onGenerate: () => void;
-  onExecute: () => Promise<string>;
+  onAdvance: () => void;
 }
 
-export default function GameBuildPlanPanel({ plan, onGenerate, onExecute }: GameBuildPlanPanelProps) {
+export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: GameBuildPlanPanelProps) {
   const [isOpen, setIsOpen] = useState(true);
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionMessage, setExecutionMessage] = useState<string | null>(null);
@@ -20,9 +21,13 @@ export default function GameBuildPlanPanel({ plan, onGenerate, onExecute }: Game
   const handleExecute = async () => {
     if (!plan || !currentTask) return;
     setIsExecuting(true); setExecutionError(null); setExecutionMessage(null);
-    try { setExecutionMessage(await onExecute()); }
-    catch (error) { setExecutionError(error instanceof Error ? error.message : "The build task could not be applied to the GameMaker."); }
-    finally { setIsExecuting(false); }
+    try {
+      const result = executeCurrentGameBuildTask(plan);
+      onAdvance();
+      setExecutionMessage(result.summary);
+    } catch (error) {
+      setExecutionError(error instanceof Error ? error.message : "The build task could not be applied to the GameMaker.");
+    } finally { setIsExecuting(false); }
   };
 
   return <section className="border-b border-[#a9df5a]/20 bg-[#0b111c] px-4 py-3"><div className="mx-auto max-w-[1800px] rounded border border-[#a9df5a]/20 bg-[#0d1713]"><div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#a9df5a]">AI Build Plan</p><p className="mt-1 text-xs text-white/60">{plan ? `BUILD PLAN ${plan.version.toUpperCase()} · ${currentTask ? currentTask.title : "PLAN COMPLETE"}` : "Generate the first structured plan from your Discovery, Foundation and active Game DNA."}</p></div><button type="button" onClick={() => setIsOpen((value) => !value)} className="rounded border border-white/10 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-white/70 hover:border-[#a9df5a]/50 hover:text-[#a9df5a]">{isOpen ? "HIDE ▲" : "VIEW ▼"}</button></div>
