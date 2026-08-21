@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { executeCurrentGameBuildTask } from "@/lib/gameBuildPlanner/gameBuildExecution";
 import type { GameBuildPlan } from "@/lib/gameBuildPlanner/gameBuildPlan";
 
 interface GameBuildPlanPanelProps {
@@ -9,9 +10,30 @@ interface GameBuildPlanPanelProps {
 
 export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: GameBuildPlanPanelProps) {
   const [isOpen, setIsOpen] = useState(true);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionMessage, setExecutionMessage] = useState<string | null>(null);
+  const [executionError, setExecutionError] = useState<string | null>(null);
   const tasks = plan?.phases.flatMap((phase) => phase.tasks) ?? [];
   const currentTask = tasks.find((task) => task.id === plan?.currentTaskId);
+  const currentPhase = plan?.phases.find((phase) => phase.tasks.some((task) => task.id === currentTask?.id));
   const isComplete = Boolean(plan && tasks.length && tasks.every((task) => task.status === "complete"));
+  const canExecute = Boolean(currentTask && currentPhase?.id === "world-structure" && !isComplete);
+
+  const handleExecute = () => {
+    if (!plan || !canExecute || isExecuting) return;
+    setIsExecuting(true);
+    setExecutionMessage(null);
+    setExecutionError(null);
+    try {
+      const result = executeCurrentGameBuildTask(plan);
+      setExecutionMessage(result.summary);
+      onAdvance();
+    } catch (error) {
+      setExecutionError(error instanceof Error ? error.message : "World Structure execution failed.");
+    } finally {
+      setIsExecuting(false);
+    }
+  };
 
   return (
     <section className="border-b border-[#a9df5a]/20 bg-[#0b111c] px-4 py-3">
@@ -39,9 +61,11 @@ export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: Game
                 </div>
               </article>)}
             </div>
+            {executionMessage ? <p className="mt-4 rounded border border-[#6ee7d8]/25 bg-[#6ee7d8]/5 px-3 py-2 text-[10px] leading-4 text-[#8ff3e6]">✓ {executionMessage}</p> : null}
+            {executionError ? <p className="mt-4 rounded border border-red-400/30 bg-red-400/5 px-3 py-2 text-[10px] leading-4 text-red-200">{executionError}</p> : null}
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-3">
               <p className="text-[10px] uppercase tracking-wide text-white/40">{isComplete ? "Build plan complete" : `Current task · ${currentTask?.title ?? "Ready"}`}</p>
-              <button type="button" onClick={onAdvance} disabled={isComplete} className="rounded border border-[#a9df5a] bg-[#172319] px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-[#c8f28d] disabled:cursor-not-allowed disabled:opacity-40">{isComplete ? "PLAN COMPLETE" : "NEXT TASK"}</button>
+              {canExecute ? <button type="button" onClick={handleExecute} disabled={isExecuting} className="rounded border border-[#a9df5a] bg-[#172319] px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-[#c8f28d] disabled:cursor-wait disabled:opacity-60">{isExecuting ? "BUILDING..." : "BUILD NEXT STEP"}</button> : <button type="button" disabled className="rounded border border-white/10 px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-white/30">{isComplete ? "PLAN COMPLETE" : "EXECUTION COMING NEXT"}</button>}
             </div>
           </> : <button type="button" onClick={onGenerate} className="rounded border border-[#a9df5a] bg-[#172319] px-4 py-3 text-[10px] font-bold uppercase tracking-wide text-[#c8f28d] hover:bg-[#20301f]">GENERATE BUILD PLAN</button>}
         </div> : null}
