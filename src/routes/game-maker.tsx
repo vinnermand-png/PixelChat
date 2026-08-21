@@ -23,12 +23,7 @@ import {
 } from "@/lib/gameFoundation/gameFoundationApi";
 import type { GameFoundation } from "@/lib/gameFoundation/gameFoundation";
 
-const DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD: Partial<
-  Record<
-    GameDiscoveryQuestionCategory,
-    keyof Omit<GameDiscoveryUnderstanding, "additionalNotes">
-  >
-> = {
+const DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD = {
   game_type: "gameType",
   core_experience: "coreExperience",
   player_activity: "playerActivity",
@@ -36,19 +31,66 @@ const DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD: Partial<
   social: "socialInteraction",
   progression: "progression",
   goals: "gameplayGoals",
-};
+} as const satisfies Partial<
+  Record<
+    GameDiscoveryQuestionCategory,
+    keyof Omit<GameDiscoveryUnderstanding, "additionalNotes">
+  >
+>;
+
+type DiscoveryUnderstandingField =
+  (typeof DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD)[keyof typeof DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD];
+
+function normalizeDiscoveryCategory(
+  category: GameDiscoveryQuestionCategory | string,
+): GameDiscoveryQuestionCategory | undefined {
+  const normalized = category
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  switch (normalized) {
+    case "game_type":
+      return "game_type";
+    case "core_experience":
+      return "core_experience";
+    case "player_activity":
+      return "player_activity";
+    case "world":
+    case "world_concept":
+      return "world";
+    case "social":
+    case "social_interaction":
+      return "social";
+    case "progression":
+      return "progression";
+    case "goals":
+    case "gameplay_goals":
+      return "goals";
+    case "visual_direction":
+      return "visual_direction";
+    case "other":
+    case "additional_notes":
+      return "other";
+    default:
+      return undefined;
+  }
+}
 
 function joinDiscoveryAnswers(
   session: GameDiscoverySession,
   category: GameDiscoveryQuestionCategory,
 ): string | undefined {
   const answers = session.questions
-    .filter(
-      (question) =>
-        question.category === category &&
+    .filter((question) => {
+      const normalizedCategory = normalizeDiscoveryCategory(question.category);
+
+      return (
+        normalizedCategory === category &&
         question.status === "answered" &&
-        question.answer?.trim(),
-    )
+        question.answer?.trim()
+      );
+    })
     .map((question) => question.answer!.trim());
 
   return answers.length > 0 ? answers.join("\n") : undefined;
@@ -61,10 +103,7 @@ function buildDiscoveryUnderstanding(
 
   for (const [category, field] of Object.entries(
     DISCOVERY_CATEGORY_TO_UNDERSTANDING_FIELD,
-  ) as [
-    GameDiscoveryQuestionCategory,
-    keyof Omit<GameDiscoveryUnderstanding, "additionalNotes">,
-  ][]) {
+  ) as [GameDiscoveryQuestionCategory, DiscoveryUnderstandingField][]) {
     const answer = joinDiscoveryAnswers(session, category);
     if (answer) {
       understanding[field] = answer;
