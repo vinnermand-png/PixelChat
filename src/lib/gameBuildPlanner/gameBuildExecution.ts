@@ -4,6 +4,7 @@ type TerrainId = "grass" | "dirt" | "snow" | "sand" | "stone";
 type WorldBounds = { minX: number; minY: number; maxX: number; maxY: number };
 type GridPoint = { gx: number; gy: number };
 type StarterArea = { id: string; label: string; bounds: WorldBounds; center: GridPoint };
+type PlayerEntry = { id: string; label: string; gx: number; gy: number; worldId: string; mapId: string };
 type TerrainZone = { id: string; label: string; terrainId: TerrainId; bounds: WorldBounds; source: "starter-area" | "world-identity" };
 type TerrainConnection = { id: string; fromZoneId: string; toZoneId: string; type: "transition"; description: string };
 type TerrainPath = { id: string; label: string; fromZoneId: string; toZoneId: string; points: GridPoint[]; terrainId: "dirt" };
@@ -13,6 +14,7 @@ type WorldStructureData = {
   playable: { id: string; sourceSummary: string };
   dimensions?: { width: number; height: number; bounds: WorldBounds };
   starterArea?: StarterArea;
+  playerEntry?: PlayerEntry;
   terrain?: TerrainStructureData;
 };
 type StoredMap = {
@@ -40,9 +42,7 @@ function getEditorButton(label: string) {
   return Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === label);
 }
 
-function readCurrentMap(): StoredMap {
-  getEditorButton("Save")?.click();
-  const raw = localStorage.getItem(MAP_STORAGE_KEY);
+function parseStoredMap(raw: string | null): StoredMap {
   if (!raw) throw new Error("The GameMaker map is not available for build execution.");
   const map = JSON.parse(raw) as StoredMap;
   if (!map.world || typeof map.world.gridSize !== "number" || !map.world.terrain) {
@@ -51,11 +51,18 @@ function readCurrentMap(): StoredMap {
   return map;
 }
 
-function writeAndLoadMap(map: StoredMap) {
+function readCurrentMap(): StoredMap {
+  getEditorButton("Save")?.click();
+  return parseStoredMap(localStorage.getItem(MAP_STORAGE_KEY));
+}
+
+function writeAndLoadMap(map: StoredMap): StoredMap {
   localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(map));
+  const persisted = parseStoredMap(localStorage.getItem(MAP_STORAGE_KEY));
   const loadButton = getEditorButton("Load");
   if (!loadButton) throw new Error("The existing GameMaker Load action is unavailable.");
   loadButton.click();
+  return persisted;
 }
 
 function worldBounds(size: number): WorldBounds {
@@ -86,6 +93,10 @@ function fillBounds(terrain: Record<string, TerrainId>, bounds: WorldBounds, ter
   return next;
 }
 
+function pointInBounds(point: GridPoint, bounds: WorldBounds) {
+  return point.gx >= bounds.minX && point.gx <= bounds.maxX && point.gy >= bounds.minY && point.gy <= bounds.maxY;
+}
+
 function createPlayableWorld(map: StoredMap, plan: GameBuildPlan): StoredMap {
   const existing = map.world.structure;
   return {
@@ -98,6 +109,7 @@ function createPlayableWorld(map: StoredMap, plan: GameBuildPlan): StoredMap {
         playable: existing?.playable ?? { id: crypto.randomUUID(), sourceSummary: plan.sourceSummary },
         dimensions: existing?.dimensions,
         starterArea: existing?.starterArea,
+        playerEntry: existing?.playerEntry,
         terrain: existing?.terrain,
       },
     },
@@ -147,6 +159,54 @@ function defineStarterArea(map: StoredMap, plan: GameBuildPlan): StoredMap {
           bounds,
           center: { gx: centerGx, gy: centerGy },
         },
+      },
+    },
+  };
+}
+
+function definePlayerEntry(map: StoredMap, task: GameBuildTask): StoredMap {
+  const structure = map.world.structure;
+  const dimensions = structure?.dimensions;
+  const starterArea = structure?.starterArea;
+  if (!structure?.playable || !dimensions || !starterArea) {
+    throw new Error("Playable world, dimensions and starter area must exist before player entry can be defined.");
+  }
+
+  const entryPoint = starterArea.center;
+  if (!pointInBounds(entryPoint, dimensions.bounds)) {
+    throw new Error("The player entry point is outside the playable world bounds.");
+  }
+  if (!pointInBounds(entryPoint, starterArea.bounds)) {
+    throw new Error("The player entry point must be inside the starter area.");
+  }
+
+  const existing = structure.playerEntry;
+  const playerEntry: PlayerEntry = existing ?? {
+    id: crypto.randomUUID(),
+    label: task.title === "Define player spawn" ? "Player Spawn" : "Player Entry",
+    gx: entryPoint.gx,
+    gy: entryPoint.gy,
+    worldId: structure.playable.id,
+    mapId: map.id,
+  };
+
+  if (!pointInBounds({ gx: playerEntry.gx, gy: playerEntry.gy }, dimensions.bounds)) {
+    throw new Error("The persisted player entry point is outside the playable world bounds.");
+  }
+  if (!pointInBounds({ gx: playerEntry.gx, gy: playerEntry.gy }, starterArea.bounds)) {
+    throw new Error("The persisted player entry point is outside the starter area.");
+  }
+  if (playerEntry.worldId !== structure.playable.id || playerEntry.mapId !== map.id) {
+    throw new Error("The player entry point does not reference the active world and map.");
+  }
+
+  return {
+    ...map,
+    world: {
+      ...map.world,
+      structure: {
+        ...structure,
+        playerEntry,
       },
     },
   };
@@ -332,15 +392,51 @@ function applyTerrainTask(plan: GameBuildPlan, task: GameBuildTask, map: StoredM
   throw new Error("Unknown Terrain task.");
 }
 
+function applyPlayerEntryTask(task: GameBuildTask, map: StoredMap) {
+  if (task.title !== "Define player entry" && task.title !== "Define player spawn") {
+    throw new Error("Unknown Core Play Area player-entry task.");
+  }
+  const next = definePlayerEntry(map, task);
+  const entry = next.world.structure?.playerEntry;
+  if (!entry) throw new Error("The player entry point was not created.");
+  return {
+    map: next,
+    summary: `Persisted ${entry.label.toLowerCase()} at (${entry.gx}, ${entry.gy}) inside the existing starter area and playable world.`,
+  };
+}
+
+function verifyPlayerEntryPersisted(map: StoredMap) {
+  const structure = map.world.structure;
+  const dimensions = structure?.dimensions;
+  const starterArea = structure?.starterArea;
+  const entry = structure?.playerEntry;
+  if (!structure?.playable || !dimensions || !starterArea || !entry) {
+    throw new Error("Player entry data was not persisted with the required world structure.");
+  }
+  const point = { gx: entry.gx, gy: entry.gy };
+  if (!pointInBounds(point, dimensions.bounds) || !pointInBounds(point, starterArea.bounds)) {
+    throw new Error("The persisted player entry point failed world or starter-area validation.");
+  }
+  if (entry.worldId !== structure.playable.id || entry.mapId !== map.id) {
+    throw new Error("The persisted player entry point does not reference the active world and map.");
+  }
+}
+
 export function executeCurrentGameBuildTask(plan: GameBuildPlan): GameBuildExecutionResult {
   if (typeof window === "undefined") throw new Error("Game build execution requires the browser GameMaker runtime.");
   const task = findCurrentTask(plan);
   const phase = findCurrentPhase(plan, task);
-  if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain")) {
-    throw new Error("Execution is currently available for World Structure and Terrain tasks only.");
+  const isPlayerEntryPhase = (phase?.id === "core-play-area" || phase?.id === "social-hub") && (task.title === "Define player entry" || task.title === "Define player spawn");
+  if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain" && !isPlayerEntryPhase)) {
+    throw new Error("Execution is currently available for World Structure, Terrain and the first player-entry task only.");
   }
   const map = readCurrentMap();
-  const action = phase.id === "world-structure" ? applyWorldStructureTask(plan, task, map) : applyTerrainTask(plan, task, map);
-  writeAndLoadMap(action.map);
+  const action = phase.id === "world-structure"
+    ? applyWorldStructureTask(plan, task, map)
+    : phase.id === "terrain"
+      ? applyTerrainTask(plan, task, map)
+      : applyPlayerEntryTask(task, map);
+  const persisted = writeAndLoadMap(action.map);
+  if (isPlayerEntryPhase) verifyPlayerEntryPersisted(persisted);
   return { taskId: task.id, summary: action.summary };
 }
