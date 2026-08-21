@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { normalizeWorldSizeConfig, type WorldSizeConfig } from "@/lib/gameFoundation/gameFoundation";
 
 type GeneratedGameResponse = {
   game: { name: string };
@@ -182,14 +183,23 @@ function extractResponseText(payload: OpenAiResponsesPayload): string | undefine
     ?.text;
 }
 
+function validateWorldSize(input: unknown): WorldSizeConfig {
+  try {
+    return normalizeWorldSizeConfig(input);
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : "Invalid world size configuration.");
+  }
+}
+
 export const Route = createFileRoute("/api/generate-game")({
   server: {
     handlers: {
       POST: async ({ request }) => {
         try {
-          const body = (await request.json()) as { gameName?: unknown; concept?: unknown };
+          const body = (await request.json()) as { gameName?: unknown; concept?: unknown; worldSize?: unknown };
           const gameName = validateString(body.gameName, "gameName", 120);
           const concept = validateString(body.concept, "concept", MAX_CONCEPT_LENGTH);
+          const worldSize = validateWorldSize(body.worldSize);
           const apiKey = process.env.OPENAI_API_KEY?.trim();
           if (!apiKey) {
             return json({ error: "AI game generation is not configured on the server. Add OPENAI_API_KEY to the server environment." }, 503);
@@ -205,14 +215,14 @@ export const Route = createFileRoute("/api/generate-game")({
                   role: "system",
                   content: [{
                     type: "input_text",
-                    text: "You are the PixelChat game creation designer. Turn the user's concept into concise, concrete game-design data. Return only the requested structured JSON. Preserve the user's intent, favor social multiplayer readability, and keep all values directly useful for the existing GameFoundation, GameDiscoverySession, and GameDnaVersion models. Do not invent technical implementation details or new schemas.",
+                    text: "You are the PixelChat game creation designer. Turn the user's concept into concise, concrete game-design data. Return only the requested structured JSON. Preserve the user's intent, favor social multiplayer readability, and keep all values directly useful for the existing GameFoundation, GameDiscoverySession, and GameDnaVersion models. Do not invent technical implementation details or new schemas. World size is a hard design constraint: Small worlds stay compact, Medium worlds balance social/core space and exploration, Large worlds support multiple connected areas and more exploration, and Huge worlds support broad exploration and more room for locations.",
                   }],
                 },
                 {
                   role: "user",
                   content: [{
                     type: "input_text",
-                    text: `Preferred game name: ${gameName}\n\nGame concept:\n${concept}`,
+                    text: `Preferred game name: ${gameName}\n\nSelected world size: ${worldSize.preset} (${worldSize.width}x${worldSize.height}).\nDesign the game concept, Discovery, and Game DNA to fit this amount of world space.\n\nGame concept:\n${concept}`,
                   }],
                 },
               ],
