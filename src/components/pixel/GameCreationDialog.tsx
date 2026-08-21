@@ -1,6 +1,12 @@
 import { useState } from "react";
 import {
   createFoundation,
+  DEFAULT_WORLD_SIZE_CONFIG,
+  normalizeWorldSizeConfig,
+  WORLD_SIZE_LIMITS,
+  WORLD_SIZE_PRESETS,
+  type WorldSizeConfig,
+  type WorldSizePreset,
 } from "../../lib/gameFoundation/gameFoundationApi";
 import type { GameFoundation } from "../../lib/gameFoundation/gameFoundation";
 import {
@@ -44,8 +50,17 @@ export default function GameCreationDialog({
 }: GameCreationDialogProps) {
   const [gameName, setGameName] = useState("");
   const [gameIdea, setGameIdea] = useState("");
+  const [worldSizePreset, setWorldSizePreset] = useState<WorldSizePreset>(DEFAULT_WORLD_SIZE_CONFIG.preset);
+  const [customWidth, setCustomWidth] = useState(DEFAULT_WORLD_SIZE_CONFIG.width);
+  const [customHeight, setCustomHeight] = useState(DEFAULT_WORLD_SIZE_CONFIG.height);
   const [error, setError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  const selectedWorldSize = (): WorldSizeConfig => normalizeWorldSizeConfig({
+    preset: worldSizePreset,
+    width: customWidth,
+    height: customHeight,
+  });
 
   const handleCreate = async () => {
     const name = gameName.trim();
@@ -61,6 +76,14 @@ export default function GameCreationDialog({
       return;
     }
 
+    let worldSize: WorldSizeConfig;
+    try {
+      worldSize = selectedWorldSize();
+    } catch (sizeError) {
+      setError(sizeError instanceof Error ? sizeError.message : "Invalid world dimensions.");
+      return;
+    }
+
     setError(null);
     setIsGenerating(true);
 
@@ -68,7 +91,7 @@ export default function GameCreationDialog({
       const response = await fetch("/api/generate-game", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ gameName: name, concept }),
+        body: JSON.stringify({ gameName: name, concept, worldSize }),
       });
 
       const payload = (await response.json()) as GeneratedGameResponse | { error?: string };
@@ -88,7 +111,10 @@ export default function GameCreationDialog({
           createdAt: timestamp,
           updatedAt: timestamp,
         },
-        blueprint: payload.blueprint,
+        blueprint: {
+          ...payload.blueprint,
+          worldSize,
+        },
       });
 
       const discovery = startDiscovery({
@@ -153,6 +179,52 @@ export default function GameCreationDialog({
           aria-label="Game idea"
         />
       </label>
+
+      <div className="mb-4 border-2 border-white/10 bg-[#0b111c] p-3">
+        <span className="mb-2 block">WORLD SIZE</span>
+        <select
+          value={worldSizePreset}
+          onChange={(event) => setWorldSizePreset(event.target.value as WorldSizePreset)}
+          disabled={isGenerating}
+          className="w-full border-2 border-[#a9df5a] bg-[#0b111c] px-3 py-2 text-[#d7f5a0] outline-none"
+          aria-label="World size"
+        >
+          {(["small", "medium", "large", "huge", "custom"] as WorldSizePreset[]).map((preset) => (
+            <option key={preset} value={preset}>
+              {preset === "custom" ? "Custom" : `${preset[0].toUpperCase()}${preset.slice(1)} · ${WORLD_SIZE_PRESETS[preset as Exclude<WorldSizePreset, "custom">]?.width ?? customWidth}×${WORLD_SIZE_PRESETS[preset as Exclude<WorldSizePreset, "custom">]?.height ?? customHeight}`}
+            </option>
+          ))}
+        </select>
+        {worldSizePreset === "custom" ? (
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <label>
+              <span className="mb-2 block">WIDTH</span>
+              <input
+                type="number"
+                min={WORLD_SIZE_LIMITS.min}
+                max={WORLD_SIZE_LIMITS.max}
+                value={customWidth}
+                onChange={(event) => setCustomWidth(Number(event.target.value))}
+                disabled={isGenerating}
+                className="w-full border-2 border-[#a9df5a] bg-[#0b111c] px-3 py-2 text-[#d7f5a0] outline-none"
+              />
+            </label>
+            <label>
+              <span className="mb-2 block">HEIGHT</span>
+              <input
+                type="number"
+                min={WORLD_SIZE_LIMITS.min}
+                max={WORLD_SIZE_LIMITS.max}
+                value={customHeight}
+                onChange={(event) => setCustomHeight(Number(event.target.value))}
+                disabled={isGenerating}
+                className="w-full border-2 border-[#a9df5a] bg-[#0b111c] px-3 py-2 text-[#d7f5a0] outline-none"
+              />
+            </label>
+          </div>
+        ) : null}
+        <p className="mt-2 text-white/50">World size affects the playable dimensions and how much exploration space the build plan can support.</p>
+      </div>
 
       {error ? (
         <p className="mb-4 text-red-300" role="alert">
