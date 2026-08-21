@@ -18,7 +18,9 @@ import type {
   GameDiscoveryUnderstanding,
 } from "@/lib/gameDiscovery/gameDiscovery";
 import {
+  createFoundationDnaVersion,
   moveFoundationToDraft,
+  moveFoundationToReview,
   updateFoundationBlueprint,
 } from "@/lib/gameFoundation/gameFoundationApi";
 import type { GameFoundation } from "@/lib/gameFoundation/gameFoundation";
@@ -126,6 +128,42 @@ function buildDiscoveryUnderstanding(
   return understanding;
 }
 
+function joinDefined(values: Array<string | undefined>): string | undefined {
+  const defined = values.filter((value): value is string => Boolean(value?.trim()));
+  return defined.length > 0 ? defined.join("\n\n") : undefined;
+}
+
+function buildInitialGameDna(
+  foundation: GameFoundation,
+  session: GameDiscoverySession,
+) {
+  const understanding = session.understanding;
+  const visualDirection = joinDiscoveryAnswers(session, "visual_direction");
+
+  return {
+    id: crypto.randomUUID(),
+    version: "v1.0",
+    creativeAnchor:
+      foundation.blueprint.concept ?? session.originalConcept,
+    coreIdentity: joinDefined([
+      understanding.gameType,
+      understanding.coreExperience,
+      foundation.blueprint.coreExperience,
+    ]),
+    emotionalIdentity: joinDefined([
+      understanding.gameplayGoals,
+      foundation.blueprint.coreLoop,
+    ]),
+    worldIdentity: understanding.worldConcept,
+    visualIdentity: visualDirection,
+    assetIdentity: joinDefined([
+      understanding.playerActivity,
+      understanding.socialInteraction,
+      understanding.progression,
+    ]),
+  };
+}
+
 function GameMakerRoute() {
   const [isCreateGameOpen, setIsCreateGameOpen] = useState(false);
   const [isFoundationInspectorOpen, setIsFoundationInspectorOpen] =
@@ -187,7 +225,34 @@ function GameMakerRoute() {
     setIsDiscoveryOpen(false);
   };
 
+  const handleGenerateGameDna = () => {
+    if (!activeFoundation || !discoverySession) {
+      return;
+    }
+
+    if (
+      discoverySession.status !== "complete" ||
+      activeFoundation.status !== "draft" ||
+      activeFoundation.dnaVersions.length > 0
+    ) {
+      return;
+    }
+
+    const foundationWithDna = createFoundationDnaVersion(
+      activeFoundation,
+      buildInitialGameDna(activeFoundation, discoverySession),
+    );
+
+    setActiveFoundation(moveFoundationToReview(foundationWithDna));
+  };
+
   const isDiscoveryComplete = discoverySession?.status === "complete";
+  const latestDna = activeFoundation?.dnaVersions.at(-1);
+  const canGenerateGameDna = Boolean(
+    isDiscoveryComplete &&
+      activeFoundation?.status === "draft" &&
+      activeFoundation.dnaVersions.length === 0,
+  );
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -201,7 +266,9 @@ function GameMakerRoute() {
           {isDiscoveryComplete ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-semibold text-[#a9df5a]">
-                DISCOVERY COMPLETE · FOUNDATION READY FOR GAME DNA
+                {latestDna
+                  ? "GAME DNA GENERATED · FOUNDATION READY FOR REVIEW"
+                  : "DISCOVERY COMPLETE · FOUNDATION READY FOR GAME DNA"}
               </span>
               <button
                 type="button"
@@ -210,6 +277,15 @@ function GameMakerRoute() {
               >
                 REVIEW FOUNDATION
               </button>
+              {canGenerateGameDna ? (
+                <button
+                  type="button"
+                  onClick={handleGenerateGameDna}
+                  className="rounded border border-[#fbbf24] bg-[#3a2b0b] px-3 py-2 text-xs font-semibold text-[#fbbf24]"
+                >
+                  GENERATE GAME DNA
+                </button>
+              ) : null}
             </div>
           ) : null}
           <button
@@ -236,6 +312,25 @@ function GameMakerRoute() {
           </button>
         </div>
       </div>
+
+      {latestDna ? (
+        <section className="border-b border-[#fbbf24]/30 bg-[#151109] px-4 py-3 text-[#f8edc2]">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-xs font-semibold">GAME DNA · {latestDna.version}</h2>
+            <span className="text-[10px] uppercase tracking-wide text-[#fbbf24]">
+              {latestDna.status}
+            </span>
+          </div>
+          <div className="grid gap-3 text-xs md:grid-cols-2 xl:grid-cols-3">
+            <p><span className="text-[#fbbf24]">Creative Anchor:</span> {latestDna.creativeAnchor || "Not defined yet."}</p>
+            <p><span className="text-[#fbbf24]">Core Identity:</span> {latestDna.coreIdentity || "Not defined yet."}</p>
+            <p><span className="text-[#fbbf24]">Emotional Identity:</span> {latestDna.emotionalIdentity || "Not defined yet."}</p>
+            <p><span className="text-[#fbbf24]">World Identity:</span> {latestDna.worldIdentity || "Not defined yet."}</p>
+            <p><span className="text-[#fbbf24]">Visual Identity:</span> {latestDna.visualIdentity || "Not defined yet."}</p>
+            <p><span className="text-[#fbbf24]">Asset Identity:</span> {latestDna.assetIdentity || "Not defined yet."}</p>
+          </div>
+        </section>
+      ) : null}
 
       <GameMakerV2 />
 
