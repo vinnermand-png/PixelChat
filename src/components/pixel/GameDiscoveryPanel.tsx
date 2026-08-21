@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type {
   GameDiscoveryQuestionCategory,
   GameDiscoverySession,
@@ -38,6 +38,7 @@ const UNDERSTANDING_FIELDS = [
   ["Social Interaction", "socialInteraction"],
   ["Progression", "progression"],
   ["Gameplay Goals", "gameplayGoals"],
+  ["Visual Identity", "visualIdentity"],
   ["Additional Notes", "additionalNotes"],
 ] as const;
 
@@ -58,6 +59,15 @@ function getCategoryAnswer(
   );
 }
 
+function getInitialAnswers(session: GameDiscoverySession) {
+  return Object.fromEntries(
+    DIRECT_DISCOVERY_FIELDS.map(([, category]) => [
+      category,
+      getCategoryAnswer(session, category),
+    ]),
+  ) as Partial<Record<GameDiscoveryQuestionCategory, string>>;
+}
+
 export default function GameDiscoveryPanel({
   foundation,
   session,
@@ -67,18 +77,7 @@ export default function GameDiscoveryPanel({
 }: GameDiscoveryPanelProps) {
   const [answers, setAnswers] = useState<
     Partial<Record<GameDiscoveryQuestionCategory, string>>
-  >({});
-
-  useEffect(() => {
-    setAnswers(
-      Object.fromEntries(
-        DIRECT_DISCOVERY_FIELDS.map(([, category]) => [
-          category,
-          getCategoryAnswer(session, category),
-        ]),
-      ) as Partial<Record<GameDiscoveryQuestionCategory, string>>,
-    );
-  }, [session]);
+  >(() => getInitialAnswers(session));
 
   const hasAllCategoryAnswers = DIRECT_DISCOVERY_FIELDS.every(([, category]) =>
     Boolean((answers[category] ?? "").trim()),
