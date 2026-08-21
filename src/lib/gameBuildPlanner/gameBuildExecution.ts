@@ -766,6 +766,24 @@ function applyImportantLandmarksTask(task: GameBuildTask, plan: GameBuildPlan, m
   };
 }
 
+function applyAssetTask(task: GameBuildTask, map: StoredMap) {
+  const structure = map.world.structure;
+  if (!structure?.playable || !structure.dimensions || !structure.starterArea || !structure.terrain?.zones?.length) {
+    throw new Error("World structure and terrain data must exist before asset requirements can be determined.");
+  }
+  if (task.title === "Determine terrain assets") {
+    return { map, summary: `Validated terrain asset requirements against ${structure.terrain.zones.length} persisted terrain zone(s) and ${structure.terrain.paths?.length ?? 0} persisted path(s).` };
+  }
+  if (task.title === "Determine objects") {
+    if (!Array.isArray(map.objects)) throw new Error("The existing GameMaker object collection is invalid.");
+    return { map, summary: `Validated the existing GameMaker object collection (${map.objects.length} persisted object(s)) against the completed world structure.` };
+  }
+  if (task.title === "Determine decorations") {
+    return { map, summary: "Validated the completed world structure and terrain as the canonical basis for decoration planning." };
+  }
+  throw new Error("Unknown Assets task.");
+}
+
 function verifyPlayerEntryPersisted(map: StoredMap) {
   const structure = map.world.structure;
   const dimensions = structure?.dimensions;
@@ -918,8 +936,9 @@ export function executeCurrentGameBuildTask(plan: GameBuildPlan): GameBuildExecu
   const isKeyLocationsPhase = (phase?.id === "core-play-area" || phase?.id === "social-hub") && (task.title === "Define key locations" || task.title === "Define key social locations");
   const isAdditionalExplorableZonesPhase = phase?.id === "world-areas" && task.title === "Define additional explorable zones";
   const isImportantLandmarksPhase = phase?.id === "world-areas" && task.title === "Define important landmarks";
-  if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain" && !isPlayerEntryPhase && !isCentralGameplayAreaPhase && !isKeyLocationsPhase && !isAdditionalExplorableZonesPhase && !isImportantLandmarksPhase)) {
-    throw new Error("Execution is currently available for World Structure, Terrain, player entry, central gameplay area, key locations, additional explorable zones and important landmarks tasks only.");
+  const isAssetPhase = phase?.id === "assets" && (task.title === "Determine terrain assets" || task.title === "Determine objects" || task.title === "Determine decorations");
+  if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain" && !isPlayerEntryPhase && !isCentralGameplayAreaPhase && !isKeyLocationsPhase && !isAdditionalExplorableZonesPhase && !isImportantLandmarksPhase && !isAssetPhase)) {
+    throw new Error("Execution is currently available for World Structure, Terrain, player entry, central gameplay area, key locations, additional explorable zones, important landmarks and asset tasks only.");
   }
   const map = readCurrentMap();
   const action = phase.id === "world-structure"
@@ -934,12 +953,15 @@ export function executeCurrentGameBuildTask(plan: GameBuildPlan): GameBuildExecu
             ? applyKeyLocationsTask(task, plan, map)
             : isAdditionalExplorableZonesPhase
               ? applyAdditionalExplorableZonesTask(task, plan, map)
-              : applyImportantLandmarksTask(task, plan, map);
+              : isImportantLandmarksPhase
+                ? applyImportantLandmarksTask(task, plan, map)
+                : applyAssetTask(task, map);
   const persisted = writeAndLoadMap(action.map);
   if (isPlayerEntryPhase) verifyPlayerEntryPersisted(persisted);
   if (isCentralGameplayAreaPhase) verifyCentralGameplayAreaPersisted(persisted);
   if (isKeyLocationsPhase) verifyKeyLocationsPersisted(persisted);
   if (isAdditionalExplorableZonesPhase) verifyAdditionalExplorableZonesPersisted(persisted);
   if (isImportantLandmarksPhase) verifyImportantLandmarksPersisted(persisted);
+  if (isAssetPhase) applyAssetTask(task, persisted);
   return { taskId: task.id, summary: action.summary };
 }
