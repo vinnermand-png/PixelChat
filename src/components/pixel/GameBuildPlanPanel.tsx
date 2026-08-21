@@ -22,6 +22,7 @@ export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: Game
   const isKeyLocationsTask = currentTask?.title === "Define key locations" || currentTask?.title === "Define key social locations";
   const isAdditionalExplorableZonesTask = currentTask?.title === "Define additional explorable zones";
   const isImportantLandmarksTask = currentTask?.title === "Define important landmarks";
+  const isAssetTask = currentTask?.title === "Determine terrain assets" || currentTask?.title === "Determine objects" || currentTask?.title === "Determine decorations";
   const canExecute = Boolean(
     currentTask
       && (
@@ -31,6 +32,7 @@ export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: Game
         || ((currentPhase?.id === "core-play-area" || currentPhase?.id === "social-hub") && isCentralGameplayAreaTask)
         || ((currentPhase?.id === "core-play-area" || currentPhase?.id === "social-hub") && isKeyLocationsTask)
         || (currentPhase?.id === "world-areas" && (isAdditionalExplorableZonesTask || isImportantLandmarksTask))
+        || (currentPhase?.id === "assets" && isAssetTask)
       )
       && !isComplete,
   );
