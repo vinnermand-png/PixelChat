@@ -632,7 +632,7 @@ function applyPlayerEntryTask(task: GameBuildTask, map: StoredMap) {
 }
 
 function applyCentralGameplayAreaTask(task: GameBuildTask, map: StoredMap) {
-  if (task.title !== "Define central gameplay area") {
+  if (task.title !== "Define central gameplay area" && task.title !== "Define central gathering area") {
     throw new Error("Unknown Core Play Area task.");
   }
   const next = defineCentralGameplayArea(map);
@@ -789,7 +789,7 @@ export function executeCurrentGameBuildTask(plan: GameBuildPlan): GameBuildExecu
   const task = findCurrentTask(plan);
   const phase = findCurrentPhase(plan, task);
   const isPlayerEntryPhase = (phase?.id === "core-play-area" || phase?.id === "social-hub") && (task.title === "Define player entry" || task.title === "Define player spawn");
-  const isCentralGameplayAreaPhase = phase?.id === "core-play-area" && task.title === "Define central gameplay area";
+  const isCentralGameplayAreaPhase = (phase?.id === "core-play-area" || phase?.id === "social-hub") && (task.title === "Define central gameplay area" || task.title === "Define central gathering area");
   const isKeyLocationsPhase = (phase?.id === "core-play-area" || phase?.id === "social-hub") && (task.title === "Define key locations" || task.title === "Define key social locations");
   const isAdditionalExplorableZonesPhase = phase?.id === "world-areas" && task.title === "Define additional explorable zones";
   if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain" && !isPlayerEntryPhase && !isCentralGameplayAreaPhase && !isKeyLocationsPhase && !isAdditionalExplorableZonesPhase)) {

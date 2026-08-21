@@ -8,7 +8,7 @@ interface GameBuildPlanPanelProps {
   onAdvance: () => void;
 }
 
-export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: GameBuildPlanPanelProps) {
+export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: GameBuildPlanProps) {
   const [isOpen, setIsOpen] = useState(true);
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionMessage, setExecutionMessage] = useState<string | null>(null);
@@ -18,7 +18,7 @@ export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: Game
   const currentPhase = plan?.phases.find((phase) => phase.tasks.some((task) => task.id === currentTask?.id));
   const isComplete = Boolean(plan && tasks.length && tasks.every((task) => task.status === "complete"));
   const isPlayerEntryTask = currentTask?.title === "Define player entry" || currentTask?.title === "Define player spawn";
-  const isCentralGameplayAreaTask = currentTask?.title === "Define central gameplay area";
+  const isCentralGameplayAreaTask = currentTask?.title === "Define central gameplay area" || currentTask?.title === "Define central gathering area";
   const isKeyLocationsTask = currentTask?.title === "Define key locations" || currentTask?.title === "Define key social locations";
   const isAdditionalExplorableZonesTask = currentTask?.title === "Define additional explorable zones";
   const canExecute = Boolean(
@@ -27,7 +27,7 @@ export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: Game
         currentPhase?.id === "world-structure"
         || currentPhase?.id === "terrain"
         || ((currentPhase?.id === "core-play-area" || currentPhase?.id === "social-hub") && isPlayerEntryTask)
-        || (currentPhase?.id === "core-play-area" && isCentralGameplayAreaTask)
+        || ((currentPhase?.id === "core-play-area" || currentPhase?.id === "social-hub") && isCentralGameplayAreaTask)
         || ((currentPhase?.id === "core-play-area" || currentPhase?.id === "social-hub") && isKeyLocationsTask)
         || (currentPhase?.id === "world-areas" && isAdditionalExplorableZonesTask)
       )
