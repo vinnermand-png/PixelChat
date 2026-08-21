@@ -32,7 +32,13 @@ type GeneratedGameResponse = {
 };
 
 type OpenAiResponsesPayload = {
-  output_text?: string;
+  output?: Array<{
+    type?: string;
+    content?: Array<{
+      type?: string;
+      text?: string;
+    }>;
+  }>;
   error?: { message?: string };
 };
 
@@ -168,6 +174,14 @@ function validateGeneratedGame(value: unknown): GeneratedGameResponse {
   };
 }
 
+function extractResponseText(payload: OpenAiResponsesPayload): string | undefined {
+  return payload.output
+    ?.filter((item) => item.type === "message")
+    .flatMap((item) => item.content ?? [])
+    .find((content) => content.type === "output_text" && typeof content.text === "string")
+    ?.text;
+}
+
 export const Route = createFileRoute("/api/generate-game")({
   server: {
     handlers: {
@@ -218,11 +232,12 @@ export const Route = createFileRoute("/api/generate-game")({
             return json({ error: payload?.error?.message || `OpenAI game generation failed with HTTP ${providerResponse.status}.` }, 502);
           }
 
-          if (!payload?.output_text) return json({ error: "OpenAI returned no structured game data." }, 502);
+          const outputText = extractResponseText(payload);
+          if (!outputText) return json({ error: "OpenAI returned no structured game data." }, 502);
 
           let parsed: unknown;
           try {
-            parsed = JSON.parse(payload.output_text);
+            parsed = JSON.parse(outputText);
           } catch {
             return json({ error: "OpenAI returned malformed structured game data." }, 502);
           }
