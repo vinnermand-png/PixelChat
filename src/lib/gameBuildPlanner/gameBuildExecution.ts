@@ -10,6 +10,8 @@ type TerrainZone = { id: string; label: string; terrainId: TerrainId; bounds: Wo
 type TerrainConnection = { id: string; fromZoneId: string; toZoneId: string; type: "transition"; description: string };
 type TerrainPath = { id: string; label: string; fromZoneId: string; toZoneId: string; points: GridPoint[]; terrainId: "dirt" };
 type TerrainStructureData = { zones: TerrainZone[]; connections?: TerrainConnection[]; paths?: TerrainPath[] };
+type CanonicalWorldLocation = { id: string; label: string; center?: GridPoint; bounds?: WorldBounds; [key: string]: unknown };
+type ImportantLandmark = { id: string; label: string; sourceId: string; sourceType: "key-location" | "explorable-zone"; center?: GridPoint; bounds?: WorldBounds };
 type WorldStructureData = {
   version: 1;
   playable: { id: string; sourceSummary: string };
@@ -17,6 +19,9 @@ type WorldStructureData = {
   starterArea?: StarterArea;
   playerEntry?: PlayerEntry;
   centralGameplayArea?: CentralGameplayArea;
+  keyLocations?: CanonicalWorldLocation[];
+  additionalExplorableZones?: CanonicalWorldLocation[];
+  importantLandmarks?: ImportantLandmark[];
   terrain?: TerrainStructureData;
 };
 type StoredMap = {
@@ -113,6 +118,9 @@ function createPlayableWorld(map: StoredMap, plan: GameBuildPlan): StoredMap {
         starterArea: existing?.starterArea,
         playerEntry: existing?.playerEntry,
         centralGameplayArea: existing?.centralGameplayArea,
+        keyLocations: existing?.keyLocations,
+        additionalExplorableZones: existing?.additionalExplorableZones,
+        importantLandmarks: existing?.importantLandmarks,
         terrain: existing?.terrain,
       },
     },
@@ -417,6 +425,51 @@ function defineRoadsAndPaths(map: StoredMap): StoredMap {
   };
 }
 
+function defineImportantLandmarks(map: StoredMap): StoredMap {
+  const structure = map.world.structure;
+  const keyLocations = structure?.keyLocations;
+  const additionalExplorableZones = structure?.additionalExplorableZones;
+  if (!structure?.playable || !structure.dimensions || !keyLocations || !additionalExplorableZones) {
+    throw new Error("Playable world, dimensions, key locations and additional explorable zones must exist before important landmarks can be defined.");
+  }
+
+  const existing = structure.importantLandmarks;
+  const importantLandmarks = existing?.length
+    ? existing
+    : [
+        ...keyLocations.map((location) => ({
+          id: crypto.randomUUID(),
+          label: `${location.label} Landmark`,
+          sourceId: location.id,
+          sourceType: "key-location" as const,
+          center: location.center,
+          bounds: location.bounds,
+        })),
+        ...additionalExplorableZones.map((zone) => ({
+          id: crypto.randomUUID(),
+          label: `${zone.label} Landmark`,
+          sourceId: zone.id,
+          sourceType: "explorable-zone" as const,
+          center: zone.center,
+          bounds: zone.bounds,
+        })),
+      ];
+  if (!importantLandmarks.length) {
+    throw new Error("At least one key location or additional explorable zone is required before important landmarks can be defined.");
+  }
+
+  return {
+    ...map,
+    world: {
+      ...map.world,
+      structure: {
+        ...structure,
+        importantLandmarks,
+      },
+    },
+  };
+}
+
 function applyWorldStructureTask(plan: GameBuildPlan, task: GameBuildTask, map: StoredMap) {
   if (task.title === "Define playable world") {
     return { map: createPlayableWorld(map, plan), summary: "Created persisted playable-world structure data from the current build plan." };
@@ -474,6 +527,17 @@ function applyCentralGameplayAreaTask(task: GameBuildTask, map: StoredMap) {
   };
 }
 
+function applyImportantLandmarksTask(task: GameBuildTask, map: StoredMap) {
+  if (task.title !== "Define important landmarks") {
+    throw new Error("Unknown World Areas task.");
+  }
+  const next = defineImportantLandmarks(map);
+  return {
+    map: next,
+    summary: `Persisted ${next.world.structure?.importantLandmarks?.length ?? 0} important landmark(s) from the existing key locations and explorable zones.`,
+  };
+}
+
 function verifyPlayerEntryPersisted(map: StoredMap) {
   const structure = map.world.structure;
   const dimensions = structure?.dimensions;
@@ -521,8 +585,9 @@ export function executeCurrentGameBuildTask(plan: GameBuildPlan): GameBuildExecu
   const phase = findCurrentPhase(plan, task);
   const isPlayerEntryPhase = (phase?.id === "core-play-area" || phase?.id === "social-hub") && (task.title === "Define player entry" || task.title === "Define player spawn");
   const isCentralGameplayAreaPhase = phase?.id === "core-play-area" && task.title === "Define central gameplay area";
-  if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain" && !isPlayerEntryPhase && !isCentralGameplayAreaPhase)) {
-    throw new Error("Execution is currently available for World Structure, Terrain, player entry and central gameplay area tasks only.");
+  const isImportantLandmarksTask = phase?.id === "world-areas" && task.title === "Define important landmarks";
+  if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain" && !isPlayerEntryPhase && !isCentralGameplayAreaPhase && !isImportantLandmarksTask)) {
+    throw new Error("Execution is currently available for World Structure, Terrain, player entry, central gameplay area and important landmarks tasks only.");
   }
   const map = readCurrentMap();
   const action = phase.id === "world-structure"
@@ -531,7 +596,9 @@ export function executeCurrentGameBuildTask(plan: GameBuildPlan): GameBuildExecu
       ? applyTerrainTask(plan, task, map)
       : isPlayerEntryPhase
         ? applyPlayerEntryTask(task, map)
-        : applyCentralGameplayAreaTask(task, map);
+        : isCentralGameplayAreaPhase
+          ? applyCentralGameplayAreaTask(task, map)
+          : applyImportantLandmarksTask(task, map);
   const persisted = writeAndLoadMap(action.map);
   if (isPlayerEntryPhase) verifyPlayerEntryPersisted(persisted);
   if (isCentralGameplayAreaPhase) verifyCentralGameplayAreaPersisted(persisted);

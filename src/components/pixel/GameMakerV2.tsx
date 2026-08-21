@@ -16,7 +16,7 @@ type EditorMode = "edit" | "play";
 type PlayerEntity = { gx: number; gy: number };
 type EdgeMaterial = "soil" | "rock" | "cliff";
 type PlacedObject = { id: string; assetId: AssetId; gx: number; gy: number };
-type WorldData = { gridSize: number; terrain: Record<string, TerrainKey> };
+type WorldData = { gridSize: number; terrain: Record<string, TerrainKey>; structure?: Record<string, unknown> };
 type FoundationSettings = { edgeMaterial: EdgeMaterial; edgeDepth: number };
 type PixelChatMapV1 = { version: 1; id: string; name: string; world: WorldData; foundation: FoundationSettings; objects: PlacedObject[] };
 type EditorSnapshot = { world: WorldData; objects: PlacedObject[] };
@@ -66,6 +66,7 @@ export default function GameMakerV2() {
   const [mapId, setMapId] = useState(createMapId);
   const [mapName, setMapName] = useState(DEFAULT_MAP_NAME);
   const [mapStatus, setMapStatus] = useState("Not saved");
+  const [savedMapName, setSavedMapName] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("paint");
   const [activeCategory, setActiveCategory] = useState<BuildCategory>("terrain");
   const [mode, setMode] = useState<EditorMode>("edit");
@@ -80,16 +81,35 @@ export default function GameMakerV2() {
   const [selectedAssetId, setSelectedAssetId] = useState<AssetId>(ASSET_LIBRARY[0].id);
   const [, setAssetSpriteVersion] = useState(0);
   const selectedObject = selectedObjectId ? objects.find((object) => object.id === selectedObjectId) || null : null;
+  const unsavedMapStatus = () => savedMapName ? `Current editor changed · Saved map: "${savedMapName}"` : "Current editor not saved · No saved map";
   const currentSnapshot = (): EditorSnapshot => cloneSnapshot({ world, objects });
   const applySnapshot = (snapshot: EditorSnapshot) => { const next = cloneSnapshot(snapshot); setWorld(next.world); setObjects(next.objects); setSelectedObjectId(null); };
-  const commitChange = (nextWorld: WorldData, nextObjects: PlacedObject[]) => { const previous = currentSnapshot(); const next = cloneSnapshot({ world: nextWorld, objects: nextObjects }); setHistory((current) => ({ past: [...current.past, previous], future: [] })); applySnapshot(next); setMapStatus("Not saved"); };
-  const undo = () => { if (!history.past.length || mode !== "edit") return; const previous = history.past[history.past.length - 1]; setHistory({ past: history.past.slice(0, -1), future: [currentSnapshot(), ...history.future] }); applySnapshot(previous); setMapStatus("Not saved"); };
-  const redo = () => { if (!history.future.length || mode !== "edit") return; const next = history.future[0]; setHistory({ past: [...history.past, currentSnapshot()], future: history.future.slice(1) }); applySnapshot(next); setMapStatus("Not saved"); };
-  const saveMap = () => { const map = cloneMap({ version: 1, id: mapId, name: mapName.trim() || DEFAULT_MAP_NAME, world, foundation: { edgeMaterial, edgeDepth }, objects }); localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(map)); setMapId(map.id); setMapName(map.name); setMapStatus("Saved locally"); };
-  const loadMapData = (map: PixelChatMapV1) => { const next = cloneMap(map); setMapId(next.id); setMapName(next.name); setWorld(next.world); setObjects(next.objects); setEdgeMaterial(next.foundation.edgeMaterial); setEdgeDepth(Math.max(MIN_EDGE_DEPTH, Math.min(MAX_EDGE_DEPTH, next.foundation.edgeDepth))); setHistory(EMPTY_HISTORY); setSelectedObjectId(null); setHover(null); setTool("paint"); setMode("edit"); setPlayer(null); setMapStatus("Loaded"); };
-  const loadSavedMap = () => { const raw = localStorage.getItem(MAP_STORAGE_KEY); if (!raw) { setMapStatus("No saved map found"); return; } try { const parsed: unknown = JSON.parse(raw); if (!isValidMap(parsed)) throw new Error(); loadMapData(parsed); } catch { setMapStatus("Saved map is invalid"); } };
+  const commitChange = (nextWorld: WorldData, nextObjects: PlacedObject[]) => { const previous = currentSnapshot(); const next = cloneSnapshot({ world: nextWorld, objects: nextObjects }); setHistory((current) => ({ past: [...current.past, previous], future: [] })); applySnapshot(next); setMapStatus(unsavedMapStatus()); };
+  const undo = () => { if (!history.past.length || mode !== "edit") return; const previous = history.past[history.past.length - 1]; setHistory({ past: history.past.slice(0, -1), future: [currentSnapshot(), ...history.future] }); applySnapshot(previous); setMapStatus(unsavedMapStatus()); };
+  const redo = () => { if (!history.future.length || mode !== "edit") return; const next = history.future[0]; setHistory({ past: [...history.past, currentSnapshot()], future: history.future.slice(1) }); applySnapshot(next); setMapStatus(unsavedMapStatus()); };
+  const refreshSavedMapInfo = () => {
+    const raw = localStorage.getItem(MAP_STORAGE_KEY);
+    if (!raw) {
+      setSavedMapName(null);
+      return;
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!isValidMap(parsed)) throw new Error();
+      setSavedMapName(parsed.name);
+      setMapStatus(`Saved map: "${parsed.name}"`);
+    } catch {
+      setSavedMapName(null);
+      setMapStatus("No saved map");
+    }
+  };
+  const saveMap = () => { const map = cloneMap({ version: 1, id: mapId, name: mapName.trim() || DEFAULT_MAP_NAME, world, foundation: { edgeMaterial, edgeDepth }, objects }); localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(map)); setMapId(map.id); setMapName(map.name); setSavedMapName(map.name); setMapStatus(`Map "${map.name}" saved successfully`); };
+  const loadMapData = (map: PixelChatMapV1) => { const next = cloneMap(map); setMapId(next.id); setMapName(next.name); setSavedMapName(next.name); setWorld(next.world); setObjects(next.objects); setEdgeMaterial(next.foundation.edgeMaterial); setEdgeDepth(Math.max(MIN_EDGE_DEPTH, Math.min(MAX_EDGE_DEPTH, next.foundation.edgeDepth))); setHistory(EMPTY_HISTORY); setSelectedObjectId(null); setHover(null); setTool("paint"); setMode("edit"); setPlayer(null); setMapStatus(`Saved map "${next.name}" loaded successfully`); };
+  const loadSavedMap = () => { const raw = localStorage.getItem(MAP_STORAGE_KEY); if (!raw) { setSavedMapName(null); setMapStatus("No saved map"); return; } try { const parsed: unknown = JSON.parse(raw); if (!isValidMap(parsed)) throw new Error(); loadMapData(parsed); } catch { setSavedMapName(null); setMapStatus("Saved map load failed"); } };
   const enterPlayMode = () => { const first = Object.keys(world.terrain).map((key) => key.split(",").map(Number)).find(([gx, gy]) => inBounds(gx, gy, world.gridSize) && !isCellBlocked(objects, gx, gy)); if (!first) { setMapStatus("Paint free terrain before starting Play Test"); return; } setSelectedObjectId(null); setHover(null); setPlayer((current) => current && world.terrain[cellKey(current.gx, current.gy)] && !isCellBlocked(objects, current.gx, current.gy) ? current : { gx: first[0], gy: first[1] }); setMode("play"); };
-  const clearWorld = () => { if (mode !== "edit" || !window.confirm("Clear the entire world?")) return; commitChange({ gridSize: world.gridSize, terrain: {} }, []); setPlayer(null); setSelectedObjectId(null); setMapStatus("Not saved"); };
+  const clearWorld = () => { if (mode !== "edit" || !window.confirm("Clear the entire world?")) return; commitChange({ gridSize: world.gridSize, terrain: {} }, []); setPlayer(null); setSelectedObjectId(null); setMapStatus(unsavedMapStatus()); };
+  useEffect(() => { refreshSavedMapInfo(); }, []);
+  useEffect(() => { if (mapStatus === "Not saved") setMapStatus(unsavedMapStatus()); }, [mapStatus, savedMapName]);
   useEffect(() => { const handler = (event: KeyboardEvent) => { if (mode !== "play" || !player) return; const key = event.key.toLowerCase(); const delta = key === "arrowup" || key === "w" ? { gx: 0, gy: -1 } : key === "arrowdown" || key === "s" ? { gx: 0, gy: 1 } : key === "arrowleft" || key === "a" ? { gx: -1, gy: 0 } : key === "arrowright" || key === "d" ? { gx: 1, gy: 0 } : null; if (!delta) return; event.preventDefault(); const gx = player.gx + delta.gx, gy = player.gy + delta.gy; if (!world.terrain[cellKey(gx, gy)] || isCellBlocked(objects, gx, gy)) return; setPlayer({ gx, gy }); }; window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); }, [mode, player, world.terrain, objects]);
   useEffect(() => { let active = true; const cleanups = ASSET_LIBRARY.map((asset) => { const image = getAssetSpriteImage(asset); if (!image || (image.complete && image.naturalWidth)) return null; const onLoad = () => { if (active) setAssetSpriteVersion((version) => version + 1); }; image.addEventListener("load", onLoad, { once: true }); return () => image.removeEventListener("load", onLoad); }); return () => { active = false; cleanups.forEach((cleanup) => cleanup?.()); }; }, []);
   useEffect(() => { const canvas = canvasRef.current; if (!canvas) return; const ctx = canvas.getContext("2d"); if (!ctx) return; ctx.clearRect(0, 0, VIEW_W, VIEW_H); drawFoundation(ctx, world.terrain, world.gridSize, edgeMaterial, edgeDepth); drawTerrainSurface(ctx, world.terrain, world.gridSize); if (showGrid) drawGridOverlay(ctx, world.gridSize); const entries = [ ...objects.map((object) => ({ type: "object" as const, depth: getObjectDepth(object), object })), ...(player ? [{ type: "player" as const, depth: getPlayerDepth(player), player }] : []) ].sort((a, b) => a.depth - b.depth || (a.type === "object" ? compareObjectDepth(a.object, b.type === "object" ? b.object : { id: "", gx: 0, gy: 0, assetId: ASSET_LIBRARY[0].id }) : -1)); for (const entry of entries) { if (entry.type === "object") drawAsset(ctx, entry.object); else drawPlayer(ctx, entry.player); } if (mode === "edit" && tool === "place") drawPlacementPreview(ctx, selectedAssetId, hover, world.terrain, objects); drawSelection(ctx, selectedObject); if (mode === "edit") drawHover(ctx, hover); }, [world, objects, edgeMaterial, edgeDepth, showGrid, selectedObject, hover, tool, mode, player, selectedAssetId]);
