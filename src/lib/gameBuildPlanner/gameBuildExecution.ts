@@ -6,6 +6,8 @@ type GridPoint = { gx: number; gy: number };
 type StarterArea = { id: string; label: string; bounds: WorldBounds; center: GridPoint };
 type PlayerEntry = { id: string; label: string; gx: number; gy: number; worldId: string; mapId: string };
 type CentralGameplayArea = { id: string; label: string; bounds: WorldBounds; center: GridPoint; worldId: string; mapId: string; starterAreaId: string; playerEntryId: string };
+type KeyLocationKind = "fishing" | "farming" | "combat" | "adventure" | "social" | "core";
+type KeyLocation = { id: string; label: string; kind: KeyLocationKind; gx: number; gy: number; worldId: string; mapId: string; centralGameplayAreaId: string; conceptSource: string };
 type TerrainZone = { id: string; label: string; terrainId: TerrainId; bounds: WorldBounds; source: "starter-area" | "world-identity" };
 type TerrainConnection = { id: string; fromZoneId: string; toZoneId: string; type: "transition"; description: string };
 type TerrainPath = { id: string; label: string; fromZoneId: string; toZoneId: string; points: GridPoint[]; terrainId: "dirt" };
@@ -17,6 +19,7 @@ type WorldStructureData = {
   starterArea?: StarterArea;
   playerEntry?: PlayerEntry;
   centralGameplayArea?: CentralGameplayArea;
+  keyLocations?: KeyLocation[];
   terrain?: TerrainStructureData;
 };
 type StoredMap = {
@@ -113,6 +116,7 @@ function createPlayableWorld(map: StoredMap, plan: GameBuildPlan): StoredMap {
         starterArea: existing?.starterArea,
         playerEntry: existing?.playerEntry,
         centralGameplayArea: existing?.centralGameplayArea,
+        keyLocations: existing?.keyLocations,
         terrain: existing?.terrain,
       },
     },
@@ -263,6 +267,84 @@ function defineCentralGameplayArea(map: StoredMap): StoredMap {
       structure: {
         ...structure,
         centralGameplayArea,
+      },
+    },
+  };
+}
+
+function deriveKeyLocationKinds(sourceSummary: string): Array<{ kind: KeyLocationKind; label: string }> {
+  const text = sourceSummary.toLowerCase();
+  const locations: Array<{ kind: KeyLocationKind; label: string }> = [];
+  if (/fish|fishing|harbor|harbour|dock|pier/.test(text)) locations.push({ kind: "fishing", label: "Fishing Location" });
+  if (/farm|farming|crop|harvest/.test(text)) locations.push({ kind: "farming", label: "Farm Activity Area" });
+  if (/combat|battle|arena|fight/.test(text)) locations.push({ kind: "combat", label: "Combat Activity Area" });
+  if (/quest|adventure|explore|exploration/.test(text)) locations.push({ kind: "adventure", label: "Adventure Activity Area" });
+  if (/social|multiplayer|shared|chat|community|meeting/.test(text)) locations.push({ kind: "social", label: "Social Activity Area" });
+  return locations.length ? locations : [{ kind: "core", label: "Core Activity Location" }];
+}
+
+function keyLocationPoint(area: CentralGameplayArea, index: number, used: Set<string>, playerEntry: GridPoint): GridPoint {
+  const offsets = [
+    { x: -2, y: -2 }, { x: 2, y: -2 }, { x: -2, y: 2 }, { x: 2, y: 2 },
+    { x: 0, y: -2 }, { x: 2, y: 0 }, { x: 0, y: 2 }, { x: -2, y: 0 },
+  ];
+  for (let attempt = 0; attempt < offsets.length; attempt++) {
+    const offset = offsets[(index + attempt) % offsets.length];
+    const point = {
+      gx: Math.max(area.bounds.minX, Math.min(area.bounds.maxX, area.center.gx + offset.x)),
+      gy: Math.max(area.bounds.minY, Math.min(area.bounds.maxY, area.center.gy + offset.y)),
+    };
+    const key = cellKey(point.gx, point.gy);
+    if (key !== cellKey(playerEntry.gx, playerEntry.gy) && !used.has(key)) return point;
+  }
+  throw new Error("The central gameplay area does not contain enough distinct cells for the required key locations.");
+}
+
+function defineKeyLocations(map: StoredMap, plan: GameBuildPlan): StoredMap {
+  const structure = map.world.structure;
+  const dimensions = structure?.dimensions;
+  const starterArea = structure?.starterArea;
+  const playerEntry = structure?.playerEntry;
+  const centralGameplayArea = structure?.centralGameplayArea;
+  if (!structure?.playable || !dimensions || !starterArea || !playerEntry || !centralGameplayArea) {
+    throw new Error("Playable world, dimensions, starter area, player entry and central gameplay area must exist before key locations can be defined.");
+  }
+  if (centralGameplayArea.worldId !== structure.playable.id || centralGameplayArea.mapId !== map.id) {
+    throw new Error("The central gameplay area does not reference the active world and map.");
+  }
+  const playerEntryPoint = { gx: playerEntry.gx, gy: playerEntry.gy };
+  if (!pointInBounds(playerEntryPoint, dimensions.bounds) || !pointInBounds(playerEntryPoint, starterArea.bounds) || !pointInBounds(playerEntryPoint, centralGameplayArea.bounds)) {
+    throw new Error("The existing player entry point must remain valid before key locations can be defined.");
+  }
+
+  const definitions = deriveKeyLocationKinds(plan.sourceSummary);
+  const existingByKind = new Map((structure.keyLocations ?? []).map((location) => [location.kind, location]));
+  const used = new Set((structure.keyLocations ?? []).map((location) => cellKey(location.gx, location.gy)));
+  const keyLocations = definitions.map((definition, index) => {
+    const existing = existingByKind.get(definition.kind);
+    if (existing) return existing;
+    const point = keyLocationPoint(centralGameplayArea, index, used, playerEntryPoint);
+    used.add(cellKey(point.gx, point.gy));
+    return {
+      id: crypto.randomUUID(),
+      label: definition.label,
+      kind: definition.kind,
+      gx: point.gx,
+      gy: point.gy,
+      worldId: structure.playable.id,
+      mapId: map.id,
+      centralGameplayAreaId: centralGameplayArea.id,
+      conceptSource: plan.sourceSummary,
+    };
+  });
+
+  return {
+    ...map,
+    world: {
+      ...map.world,
+      structure: {
+        ...structure,
+        keyLocations,
       },
     },
   };
@@ -474,6 +556,19 @@ function applyCentralGameplayAreaTask(task: GameBuildTask, map: StoredMap) {
   };
 }
 
+function applyKeyLocationsTask(task: GameBuildTask, plan: GameBuildPlan, map: StoredMap) {
+  if (task.title !== "Define key locations" && task.title !== "Define key social locations") {
+    throw new Error("Unknown key locations task.");
+  }
+  const next = defineKeyLocations(map, plan);
+  const locations = next.world.structure?.keyLocations;
+  if (!locations?.length) throw new Error("No key locations were created.");
+  return {
+    map: next,
+    summary: `Persisted ${locations.length} key location${locations.length === 1 ? "" : "s"} derived from the current game concept.`,
+  };
+}
+
 function verifyPlayerEntryPersisted(map: StoredMap) {
   const structure = map.world.structure;
   const dimensions = structure?.dimensions;
@@ -515,14 +610,50 @@ function verifyCentralGameplayAreaPersisted(map: StoredMap) {
   }
 }
 
+function verifyKeyLocationsPersisted(map: StoredMap) {
+  const structure = map.world.structure;
+  const dimensions = structure?.dimensions;
+  const starterArea = structure?.starterArea;
+  const playerEntry = structure?.playerEntry;
+  const centralGameplayArea = structure?.centralGameplayArea;
+  const keyLocations = structure?.keyLocations;
+  if (!structure?.playable || !dimensions || !starterArea || !playerEntry || !centralGameplayArea || !keyLocations?.length) {
+    throw new Error("Key location data was not persisted with the required world structure.");
+  }
+  const ids = new Set<string>();
+  const occupied = new Set<string>();
+  for (const location of keyLocations) {
+    const point = { gx: location.gx, gy: location.gy };
+    if (ids.has(location.id) || occupied.has(cellKey(point.gx, point.gy))) {
+      throw new Error("Persisted key locations must have stable unique ids and positions.");
+    }
+    ids.add(location.id);
+    occupied.add(cellKey(point.gx, point.gy));
+    if (!pointInBounds(point, dimensions.bounds) || !pointInBounds(point, starterArea.bounds) || !pointInBounds(point, centralGameplayArea.bounds)) {
+      throw new Error("A persisted key location is outside the existing playable central area.");
+    }
+    if (location.worldId !== structure.playable.id || location.mapId !== map.id || location.centralGameplayAreaId !== centralGameplayArea.id) {
+      throw new Error("A persisted key location does not reference the active world, map and central gameplay area.");
+    }
+    if (!location.conceptSource.trim()) {
+      throw new Error("A persisted key location is missing its concept source.");
+    }
+  }
+  const entryPoint = { gx: playerEntry.gx, gy: playerEntry.gy };
+  if (!pointInBounds(entryPoint, starterArea.bounds) || !pointInBounds(entryPoint, centralGameplayArea.bounds)) {
+    throw new Error("The existing player entry point is no longer valid after key locations were persisted.");
+  }
+}
+
 export function executeCurrentGameBuildTask(plan: GameBuildPlan): GameBuildExecutionResult {
   if (typeof window === "undefined") throw new Error("Game build execution requires the browser GameMaker runtime.");
   const task = findCurrentTask(plan);
   const phase = findCurrentPhase(plan, task);
   const isPlayerEntryPhase = (phase?.id === "core-play-area" || phase?.id === "social-hub") && (task.title === "Define player entry" || task.title === "Define player spawn");
   const isCentralGameplayAreaPhase = phase?.id === "core-play-area" && task.title === "Define central gameplay area";
-  if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain" && !isPlayerEntryPhase && !isCentralGameplayAreaPhase)) {
-    throw new Error("Execution is currently available for World Structure, Terrain, player entry and central gameplay area tasks only.");
+  const isKeyLocationsPhase = (phase?.id === "core-play-area" || phase?.id === "social-hub") && (task.title === "Define key locations" || task.title === "Define key social locations");
+  if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain" && !isPlayerEntryPhase && !isCentralGameplayAreaPhase && !isKeyLocationsPhase)) {
+    throw new Error("Execution is currently available for World Structure, Terrain, player entry, central gameplay area and key locations tasks only.");
   }
   const map = readCurrentMap();
   const action = phase.id === "world-structure"
@@ -531,9 +662,12 @@ export function executeCurrentGameBuildTask(plan: GameBuildPlan): GameBuildExecu
       ? applyTerrainTask(plan, task, map)
       : isPlayerEntryPhase
         ? applyPlayerEntryTask(task, map)
-        : applyCentralGameplayAreaTask(task, map);
+        : isCentralGameplayAreaPhase
+          ? applyCentralGameplayAreaTask(task, map)
+          : applyKeyLocationsTask(task, plan, map);
   const persisted = writeAndLoadMap(action.map);
   if (isPlayerEntryPhase) verifyPlayerEntryPersisted(persisted);
   if (isCentralGameplayAreaPhase) verifyCentralGameplayAreaPersisted(persisted);
+  if (isKeyLocationsPhase) verifyKeyLocationsPersisted(persisted);
   return { taskId: task.id, summary: action.summary };
 }
