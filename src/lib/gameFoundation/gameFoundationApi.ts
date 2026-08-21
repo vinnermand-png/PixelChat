@@ -50,12 +50,25 @@ export function createFoundationDnaVersion(
 ): GameFoundation {
   const dnaVersion = createGameDnaVersion({
     ...input,
-    status: "draft",
+    status: "active",
   });
 
   return {
     ...foundation,
-    dnaVersions: [...foundation.dnaVersions, dnaVersion],
+    game: {
+      ...foundation.game,
+      updatedAt: dnaVersion.updatedAt,
+    },
+    dnaVersions: foundation.dnaVersions.map((version) =>
+      version.status === "active"
+        ? {
+            ...version,
+            status: "archived" as const,
+            updatedAt: dnaVersion.updatedAt,
+          }
+        : version,
+    ).concat(dnaVersion),
+    activeVersionId: dnaVersion.id,
   };
 }
 
@@ -63,6 +76,39 @@ export function getFoundationActiveGameDna(
   foundation: GameFoundation,
 ): GameDnaVersion | undefined {
   return getActiveGameDna(foundation);
+}
+
+export function calculateFoundationReadiness(foundation: GameFoundation): {
+  score: number;
+  completedStages: number;
+  totalStages: number;
+  label: string;
+} {
+  const stages = [
+    Boolean(foundation.game.id && foundation.game.name.trim()),
+    foundation.status !== "discovery",
+    foundation.status === "draft" ||
+      foundation.status === "review" ||
+      foundation.status === "active",
+    foundation.dnaVersions.length > 0,
+    foundation.status === "active",
+    Boolean(getActiveGameDna(foundation)),
+  ];
+  const completedStages = stages.filter(Boolean).length;
+  const totalStages = stages.length;
+  const score = Math.round((completedStages / totalStages) * 100);
+
+  return {
+    score,
+    completedStages,
+    totalStages,
+    label:
+      score >= 83
+        ? "Ready for build"
+        : score >= 67
+          ? "Definition in progress"
+          : "Game definition in progress",
+  };
 }
 
 export function moveFoundationToDraft(
