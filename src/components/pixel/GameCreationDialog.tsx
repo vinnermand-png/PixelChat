@@ -3,11 +3,9 @@ import {
   createFoundation,
   createFoundationDnaVersion,
   moveFoundationToDraft,
-  moveFoundationToReview,
 } from "../../lib/gameFoundation/gameFoundationApi";
 import type { GameFoundation } from "../../lib/gameFoundation/gameFoundation";
 import {
-  completeDiscovery,
   startDiscovery,
   updateDiscoveryUnderstanding,
 } from "../../lib/gameDiscovery/gameDiscoveryApi";
@@ -95,27 +93,26 @@ export default function GameCreationDialog({
         blueprint: payload.blueprint,
       });
 
-      const foundationWithDna = moveFoundationToReview(
-        moveFoundationToDraft(
-          createFoundationDnaVersion(foundation, {
-            id: crypto.randomUUID(),
-            version: "v1.0",
-            ...payload.dna,
-          }),
-        ),
+      const foundationWithDna = moveFoundationToDraft(
+        createFoundationDnaVersion(foundation, {
+          id: crypto.randomUUID(),
+          version: "v1.0",
+          ...payload.dna,
+        }),
       );
 
       const discovery = startDiscovery({
         id: crypto.randomUUID(),
         foundation: foundationWithDna,
       });
-      const completedDiscovery = completeDiscovery(
-        updateDiscoveryUnderstanding(discovery, payload.discovery),
+      const discoveryWithAiDraft = updateDiscoveryUnderstanding(
+        discovery,
+        payload.discovery,
       );
 
       onGameCreated({
         foundation: foundationWithDna,
-        discoverySession: completedDiscovery,
+        discoverySession: discoveryWithAiDraft,
       });
     } catch (createError) {
       setError(
@@ -132,7 +129,7 @@ export default function GameCreationDialog({
     <div
       className="border-2 border-[#a9df5a] bg-[#132019] p-4 text-[#d7f5a0]"
       style={{
-        fontFamily: '"Press Start 2P", "Courier New", monospace',
+        fontFamily: '\"Press Start 2P\", \"Courier New\", monospace',
         fontSize: 10,
         lineHeight: 1.6,
       }}
