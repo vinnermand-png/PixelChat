@@ -9,6 +9,7 @@ type CentralGameplayArea = { id: string; label: string; bounds: WorldBounds; cen
 type KeyLocationKind = "fishing" | "farming" | "combat" | "adventure" | "social" | "core";
 type KeyLocation = { id: string; label: string; kind: KeyLocationKind; gx: number; gy: number; worldId: string; mapId: string; centralGameplayAreaId: string; conceptSource: string };
 type ExplorableZone = { id: string; label: string; bounds: WorldBounds; center: GridPoint; worldId: string; mapId: string; conceptSource: string };
+type ImportantLandmark = { id: string; label: string; kind: string; gx: number; gy: number; worldId: string; mapId: string; conceptSource: string };
 type TerrainZone = { id: string; label: string; terrainId: TerrainId; bounds: WorldBounds; source: "starter-area" | "world-identity" };
 type TerrainConnection = { id: string; fromZoneId: string; toZoneId: string; type: "transition"; description: string };
 type TerrainPath = { id: string; label: string; fromZoneId: string; toZoneId: string; points: GridPoint[]; terrainId: "dirt" };
@@ -22,6 +23,7 @@ type WorldStructureData = {
   centralGameplayArea?: CentralGameplayArea;
   keyLocations?: KeyLocation[];
   additionalExplorableZones?: ExplorableZone[];
+  importantLandmarks?: ImportantLandmark[];
   terrain?: TerrainStructureData;
 };
 type StoredMap = {
@@ -124,6 +126,7 @@ function createPlayableWorld(map: StoredMap, plan: GameBuildPlan): StoredMap {
         centralGameplayArea: existing?.centralGameplayArea,
         keyLocations: existing?.keyLocations,
         additionalExplorableZones: existing?.additionalExplorableZones,
+        importantLandmarks: existing?.importantLandmarks,
         terrain: existing?.terrain,
       },
     },
@@ -208,7 +211,7 @@ function definePlayerEntry(map: StoredMap, task: GameBuildTask): StoredMap {
     throw new Error("The persisted player entry point is outside the playable world bounds.");
   }
   if (!pointInBounds({ gx: playerEntry.gx, gy: playerEntry.gy }, starterArea.bounds)) {
-    throw new Error("The persisted player entry point must be inside the starter area.");
+    throw new Error("The player entry point must be inside the starter area.");
   }
   if (playerEntry.worldId !== structure.playable.id || playerEntry.mapId !== map.id) {
     throw new Error("The player entry point does not reference the active world and map.");
@@ -433,6 +436,86 @@ function defineAdditionalExplorableZones(map: StoredMap, plan: GameBuildPlan): S
       structure: {
         ...structure,
         additionalExplorableZones: [zone],
+      },
+    },
+  };
+}
+
+function deriveImportantLandmarkDefinitions(sourceSummary: string): Array<{ kind: string; label: string }> {
+  const text = sourceSummary.toLowerCase();
+  const definitions: Array<{ kind: string; label: string }> = [];
+  if (/fish|fishing|harbor|harbour|dock|pier/.test(text)) definitions.push({ kind: "fishing", label: "Harbor Landmark" });
+  if (/social|multiplayer|shared|chat|community|meeting|village/.test(text)) definitions.push({ kind: "social", label: "Village Social Landmark" });
+  if (/forest|woods|tree|grove/.test(text)) definitions.push({ kind: "nature", label: "Forest Landmark" });
+  if (/beach|shore|coast|coastal/.test(text)) definitions.push({ kind: "coastal", label: "Beach Landmark" });
+  if (/house|home|village|town/.test(text)) definitions.push({ kind: "community", label: "Village Landmark" });
+  return definitions.length ? definitions.slice(0, 3) : [{ kind: "core", label: "World Landmark" }];
+}
+
+function defineImportantLandmarks(map: StoredMap, plan: GameBuildPlan): StoredMap {
+  const structure = map.world.structure;
+  const dimensions = structure?.dimensions;
+  const playerEntry = structure?.playerEntry;
+  const keyLocations = structure?.keyLocations ?? [];
+  const zones = structure?.additionalExplorableZones ?? [];
+  if (!structure?.playable || !dimensions || !playerEntry || !structure.starterArea) {
+    throw new Error("Playable world, dimensions, starter area and player entry must exist before important landmarks can be defined.");
+  }
+  if (playerEntry.worldId !== structure.playable.id || playerEntry.mapId !== map.id) {
+    throw new Error("The player entry does not reference the active world and map.");
+  }
+  for (const location of keyLocations) {
+    if (location.worldId !== structure.playable.id || location.mapId !== map.id) {
+      throw new Error("Existing key locations do not reference the active world and map.");
+    }
+  }
+  for (const zone of zones) {
+    if (zone.worldId !== structure.playable.id || zone.mapId !== map.id) {
+      throw new Error("Existing explorable zones do not reference the active world and map.");
+    }
+  }
+
+  const definitions = deriveImportantLandmarkDefinitions(plan.sourceSummary);
+  const existing = structure.importantLandmarks ?? [];
+  if (existing.length) return { ...map, world: { ...map.world, structure: { ...structure, importantLandmarks: existing } } };
+
+  const occupied = new Set<string>([
+    cellKey(playerEntry.gx, playerEntry.gy),
+    ...keyLocations.map((location) => cellKey(location.gx, location.gy)),
+  ]);
+  const candidates: GridPoint[] = [
+    ...zones.map((zone) => zone.center),
+    { gx: dimensions.bounds.minX + 1, gy: dimensions.bounds.minY + 1 },
+    { gx: dimensions.bounds.maxX - 1, gy: dimensions.bounds.minY + 1 },
+    { gx: dimensions.bounds.minX + 1, gy: dimensions.bounds.maxY - 1 },
+    { gx: dimensions.bounds.maxX - 1, gy: dimensions.bounds.maxY - 1 },
+    { gx: dimensions.bounds.minX + 2, gy: Math.floor((dimensions.bounds.minY + dimensions.bounds.maxY) / 2) },
+    { gx: dimensions.bounds.maxX - 2, gy: Math.floor((dimensions.bounds.minY + dimensions.bounds.maxY) / 2) },
+  ];
+  const used = new Set(occupied);
+  const landmarks = definitions.map((definition, index) => {
+    const point = candidates.find((candidate) => pointInBounds(candidate, dimensions.bounds) && !used.has(cellKey(candidate.gx, candidate.gy)));
+    if (!point) throw new Error("No unique playable-world position is available for the required important landmarks.");
+    used.add(cellKey(point.gx, point.gy));
+    return {
+      id: `${structure.playable.id}:landmark:${definition.kind}`,
+      label: definition.label,
+      kind: definition.kind,
+      gx: point.gx,
+      gy: point.gy,
+      worldId: structure.playable.id,
+      mapId: map.id,
+      conceptSource: plan.sourceSummary,
+    };
+  });
+
+  return {
+    ...map,
+    world: {
+      ...map.world,
+      structure: {
+        ...structure,
+        importantLandmarks: landmarks,
       },
     },
   };
@@ -670,6 +753,19 @@ function applyAdditionalExplorableZonesTask(task: GameBuildTask, plan: GameBuild
   };
 }
 
+function applyImportantLandmarksTask(task: GameBuildTask, plan: GameBuildPlan, map: StoredMap) {
+  if (task.title !== "Define important landmarks") {
+    throw new Error("Unknown World Areas important-landmarks task.");
+  }
+  const next = defineImportantLandmarks(map, plan);
+  const landmarks = next.world.structure?.importantLandmarks;
+  if (!landmarks?.length) throw new Error("No important landmarks were created.");
+  return {
+    map: next,
+    summary: `Persisted ${landmarks.length} important landmark${landmarks.length === 1 ? "" : "s"} derived from the current world concept.`,
+  };
+}
+
 function verifyPlayerEntryPersisted(map: StoredMap) {
   const structure = map.world.structure;
   const dimensions = structure?.dimensions;
@@ -776,11 +872,40 @@ function verifyAdditionalExplorableZonesPersisted(map: StoredMap) {
       throw new Error("A persisted additional explorable zone overlaps the existing starter or central gameplay area.");
     }
     if (pointInBounds({ gx: playerEntry.gx, gy: playerEntry.gy }, zone.bounds)) {
-      throw new Error("A persisted additional explorable zone overlaps the player entry point.");
+      throw new Error("The additional explorable zone overlaps the player entry point.");
     }
     if (keyLocations.some((location) => pointInBounds({ gx: location.gx, gy: location.gy }, zone.bounds))) {
-      throw new Error("A persisted additional explorable zone overlaps an existing key location.");
+      throw new Error("An additional explorable zone overlaps an existing key location.");
     }
+  }
+}
+
+function verifyImportantLandmarksPersisted(map: StoredMap) {
+  const structure = map.world.structure;
+  const dimensions = structure?.dimensions;
+  const entry = structure?.playerEntry;
+  const keyLocations = structure?.keyLocations ?? [];
+  const landmarks = structure?.importantLandmarks;
+  if (!structure?.playable || !dimensions || !entry || !landmarks?.length) {
+    throw new Error("Important landmark data was not persisted with the required world structure.");
+  }
+  const ids = new Set<string>();
+  const occupied = new Set([cellKey(entry.gx, entry.gy), ...keyLocations.map((location) => cellKey(location.gx, location.gy))]);
+  const positions = new Set<string>();
+  for (const landmark of landmarks) {
+    const key = cellKey(landmark.gx, landmark.gy);
+    if (ids.has(landmark.id) || positions.has(key) || occupied.has(key)) {
+      throw new Error("Persisted important landmarks must have stable unique ids and non-overlapping positions.");
+    }
+    ids.add(landmark.id);
+    positions.add(key);
+    if (!pointInBounds({ gx: landmark.gx, gy: landmark.gy }, dimensions.bounds)) {
+      throw new Error("A persisted important landmark is outside the playable world bounds.");
+    }
+    if (landmark.worldId !== structure.playable.id || landmark.mapId !== map.id) {
+      throw new Error("A persisted important landmark does not reference the active world and map.");
+    }
+    if (!landmark.conceptSource.trim()) throw new Error("A persisted important landmark is missing its concept source.");
   }
 }
 
@@ -792,8 +917,9 @@ export function executeCurrentGameBuildTask(plan: GameBuildPlan): GameBuildExecu
   const isCentralGameplayAreaPhase = (phase?.id === "core-play-area" || phase?.id === "social-hub") && (task.title === "Define central gameplay area" || task.title === "Define central gathering area");
   const isKeyLocationsPhase = (phase?.id === "core-play-area" || phase?.id === "social-hub") && (task.title === "Define key locations" || task.title === "Define key social locations");
   const isAdditionalExplorableZonesPhase = phase?.id === "world-areas" && task.title === "Define additional explorable zones";
-  if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain" && !isPlayerEntryPhase && !isCentralGameplayAreaPhase && !isKeyLocationsPhase && !isAdditionalExplorableZonesPhase)) {
-    throw new Error("Execution is currently available for World Structure, Terrain, player entry, central gameplay area, key locations and additional explorable zones tasks only.");
+  const isImportantLandmarksPhase = phase?.id === "world-areas" && task.title === "Define important landmarks";
+  if (!phase || (phase.id !== "world-structure" && phase.id !== "terrain" && !isPlayerEntryPhase && !isCentralGameplayAreaPhase && !isKeyLocationsPhase && !isAdditionalExplorableZonesPhase && !isImportantLandmarksPhase)) {
+    throw new Error("Execution is currently available for World Structure, Terrain, player entry, central gameplay area, key locations, additional explorable zones and important landmarks tasks only.");
   }
   const map = readCurrentMap();
   const action = phase.id === "world-structure"
@@ -806,11 +932,14 @@ export function executeCurrentGameBuildTask(plan: GameBuildPlan): GameBuildExecu
           ? applyCentralGameplayAreaTask(task, map)
           : isKeyLocationsPhase
             ? applyKeyLocationsTask(task, plan, map)
-            : applyAdditionalExplorableZonesTask(task, plan, map);
+            : isAdditionalExplorableZonesPhase
+              ? applyAdditionalExplorableZonesTask(task, plan, map)
+              : applyImportantLandmarksTask(task, plan, map);
   const persisted = writeAndLoadMap(action.map);
   if (isPlayerEntryPhase) verifyPlayerEntryPersisted(persisted);
   if (isCentralGameplayAreaPhase) verifyCentralGameplayAreaPersisted(persisted);
   if (isKeyLocationsPhase) verifyKeyLocationsPersisted(persisted);
   if (isAdditionalExplorableZonesPhase) verifyAdditionalExplorableZonesPersisted(persisted);
+  if (isImportantLandmarksPhase) verifyImportantLandmarksPersisted(persisted);
   return { taskId: task.id, summary: action.summary };
 }
