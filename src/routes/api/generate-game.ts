@@ -233,7 +233,19 @@ export const Route = createFileRoute("/api/generate-game")({
           }
 
           const outputText = extractResponseText(payload);
-          if (!outputText) return json({ error: "OpenAI returned no structured game data." }, 502);
+          if (!outputText) {
+            if (process.env.NODE_ENV === "development") {
+              console.error("OpenAI Responses API payload with no extractable output text:", payload);
+              return json({
+                error: "OpenAI returned no structured game data.",
+                debug: {
+                  outputTypes: payload.output?.map((item) => item.type ?? null) ?? [],
+                  contentTypes: payload.output?.flatMap((item) => (item.content ?? []).map((content) => content.type ?? null)) ?? [],
+                },
+              }, 502);
+            }
+            return json({ error: "OpenAI returned no structured game data." }, 502);
+          }
 
           let parsed: unknown;
           try {
