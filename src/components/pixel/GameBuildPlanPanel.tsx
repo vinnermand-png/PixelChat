@@ -20,6 +20,7 @@ export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: Game
   const isPlayerEntryTask = currentTask?.title === "Define player entry" || currentTask?.title === "Define player spawn";
   const isCentralGameplayAreaTask = currentTask?.title === "Define central gameplay area";
   const isKeyLocationsTask = currentTask?.title === "Define key locations" || currentTask?.title === "Define key social locations";
+  const isAdditionalExplorableZonesTask = currentTask?.title === "Define additional explorable zones";
   const canExecute = Boolean(
     currentTask
       && (
@@ -28,6 +29,7 @@ export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: Game
         || ((currentPhase?.id === "core-play-area" || currentPhase?.id === "social-hub") && isPlayerEntryTask)
         || (currentPhase?.id === "core-play-area" && isCentralGameplayAreaTask)
         || ((currentPhase?.id === "core-play-area" || currentPhase?.id === "social-hub") && isKeyLocationsTask)
+        || (currentPhase?.id === "world-areas" && isAdditionalExplorableZonesTask)
       )
       && !isComplete,
   );
