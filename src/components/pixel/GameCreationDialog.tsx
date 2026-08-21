@@ -1,11 +1,45 @@
 import { useState } from "react";
-import { createFoundation } from "../../lib/gameFoundation/gameFoundationApi";
+import {
+  createFoundation,
+  createFoundationDnaVersion,
+  moveFoundationToReview,
+} from "../../lib/gameFoundation/gameFoundationApi";
 import type { GameFoundation } from "../../lib/gameFoundation/gameFoundation";
+import {
+  completeDiscovery,
+  startDiscovery,
+  updateDiscoveryUnderstanding,
+} from "../../lib/gameDiscovery/gameDiscoveryApi";
+import type { GameDiscoverySession, GameDiscoveryUnderstanding } from "../../lib/gameDiscovery/gameDiscovery";
 
 export interface GameCreationDialogProps {
   onCancel: () => void;
-  onGameCreated: (foundation: GameFoundation) => void;
+  onGameCreated: (result: {
+    foundation: GameFoundation;
+    discoverySession: GameDiscoverySession;
+  }) => void;
 }
+
+type GeneratedGameResponse = {
+  game: { name: string };
+  blueprint: {
+    concept: string;
+    coreExperience: string;
+    coreLoop: string;
+    playerMode: string;
+    systems: string[];
+    openQuestions: string[];
+  };
+  discovery: GameDiscoveryUnderstanding;
+  dna: {
+    creativeAnchor: string;
+    coreIdentity: string;
+    emotionalIdentity: string;
+    worldIdentity: string;
+    visualIdentity: string;
+    assetIdentity: string;
+  };
+};
 
 export default function GameCreationDialog({
   onCancel,
@@ -14,8 +48,9 @@ export default function GameCreationDialog({
   const [gameName, setGameName] = useState("");
   const [gameIdea, setGameIdea] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const name = gameName.trim();
     const concept = gameIdea.trim();
 
@@ -24,26 +59,69 @@ export default function GameCreationDialog({
       return;
     }
 
+    if (!concept) {
+      setError("Game idea is required.");
+      return;
+    }
+
+    setError(null);
+    setIsGenerating(true);
+
     try {
+      const response = await fetch("/api/generate-game", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ gameName: name, concept }),
+      });
+
+      const payload = (await response.json()) as GeneratedGameResponse | { error?: string };
+      if (!response.ok || !payload || "error" in payload) {
+        throw new Error(
+          "error" in payload && payload.error
+            ? payload.error
+            : "Unable to generate the game with AI.",
+        );
+      }
+
       const timestamp = new Date().toISOString();
       const foundation = createFoundation({
         game: {
           id: crypto.randomUUID(),
-          name,
+          name: payload.game.name,
           createdAt: timestamp,
           updatedAt: timestamp,
         },
-        blueprint: concept ? { concept } : undefined,
+        blueprint: payload.blueprint,
       });
 
-      setError(null);
-      onGameCreated(foundation);
+      const foundationWithDna = moveFoundationToReview(
+        createFoundationDnaVersion(foundation, {
+          id: crypto.randomUUID(),
+          version: "v1.0",
+          ...payload.dna,
+        }),
+      );
+
+      const discovery = startDiscovery({
+        id: crypto.randomUUID(),
+        foundation: foundationWithDna,
+      });
+      const completedDiscovery = completeDiscovery(
+        updateDiscoveryUnderstanding(discovery, payload.discovery),
+      );
+
+      onGameCreated({
+        foundation: foundationWithDna,
+        discoverySession: completedDiscovery,
+      });
     } catch (createError) {
       setError(
         createError instanceof Error
           ? createError.message
-          : "Unable to create the game foundation.",
+          : "Unable to generate the game.",
       );
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -69,7 +147,8 @@ export default function GameCreationDialog({
           type="text"
           value={gameName}
           onChange={(event) => setGameName(event.target.value)}
-          className="w-full border-2 border-[#a9df5a] bg-[#0b111c] px-3 py-2 text-[#d7f5a0] outline-none"
+          disabled={isGenerating}
+          className="w-full border-2 border-[#a9df5a] bg-[#0b111c] px-3 py-2 text-[#d7f5a0] outline-none disabled:opacity-60"
           aria-label="Game name"
         />
       </label>
@@ -79,7 +158,8 @@ export default function GameCreationDialog({
         <textarea
           value={gameIdea}
           onChange={(event) => setGameIdea(event.target.value)}
-          className="min-h-28 w-full border-2 border-[#a9df5a] bg-[#0b111c] px-3 py-2 text-[#d7f5a0] outline-none"
+          disabled={isGenerating}
+          className="min-h-28 w-full border-2 border-[#a9df5a] bg-[#0b111c] px-3 py-2 text-[#d7f5a0] outline-none disabled:opacity-60"
           aria-label="Game idea"
         />
       </label>
@@ -94,16 +174,18 @@ export default function GameCreationDialog({
         <button
           type="button"
           onClick={onCancel}
-          className="border-2 border-[#6ee7d8] bg-transparent px-3 py-2 text-[#6ee7d8]"
+          disabled={isGenerating}
+          className="border-2 border-[#6ee7d8] bg-transparent px-3 py-2 text-[#6ee7d8] disabled:opacity-60"
         >
           CANCEL
         </button>
         <button
           type="button"
           onClick={handleCreate}
-          className="border-2 border-[#a9df5a] bg-[#a9df5a] px-3 py-2 text-[#132019]"
+          disabled={isGenerating}
+          className="border-2 border-[#a9df5a] bg-[#a9df5a] px-3 py-2 text-[#132019] disabled:cursor-wait disabled:opacity-60"
         >
-          CREATE GAME
+          {isGenerating ? "CREATING WITH AI..." : "CREATE GAME"}
         </button>
       </div>
     </div>
