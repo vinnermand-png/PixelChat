@@ -10,6 +10,49 @@ export type GameDnaVersionStatus =
   | "active"
   | "archived";
 
+export type WorldSizePreset = "small" | "medium" | "large" | "huge" | "custom";
+
+export interface WorldSizeConfig {
+  preset: WorldSizePreset;
+  width: number;
+  height: number;
+}
+
+export const WORLD_SIZE_LIMITS = { min: 16, max: 128 } as const;
+
+export const WORLD_SIZE_PRESETS: Record<Exclude<WorldSizePreset, "custom">, { width: number; height: number }> = {
+  small: { width: 20, height: 20 },
+  medium: { width: 32, height: 32 },
+  large: { width: 48, height: 48 },
+  huge: { width: 64, height: 64 },
+};
+
+export const DEFAULT_WORLD_SIZE_CONFIG: WorldSizeConfig = {
+  preset: "medium",
+  width: WORLD_SIZE_PRESETS.medium.width,
+  height: WORLD_SIZE_PRESETS.medium.height,
+};
+
+export function normalizeWorldSizeConfig(input: unknown): WorldSizeConfig {
+  if (!input || typeof input !== "object") return { ...DEFAULT_WORLD_SIZE_CONFIG };
+  const value = input as Partial<WorldSizeConfig>;
+  const preset = value.preset;
+  if (!preset || !(preset in WORLD_SIZE_PRESETS) && preset !== "custom") {
+    return { ...DEFAULT_WORLD_SIZE_CONFIG };
+  }
+  if (preset !== "custom") {
+    const dimensions = WORLD_SIZE_PRESETS[preset];
+    return { preset, width: dimensions.width, height: dimensions.height };
+  }
+  if (!Number.isInteger(value.width) || !Number.isInteger(value.height)) {
+    throw new Error(`Custom world dimensions must be whole numbers between ${WORLD_SIZE_LIMITS.min} and ${WORLD_SIZE_LIMITS.max}.`);
+  }
+  if (value.width! < WORLD_SIZE_LIMITS.min || value.width! > WORLD_SIZE_LIMITS.max || value.height! < WORLD_SIZE_LIMITS.min || value.height! > WORLD_SIZE_LIMITS.max) {
+    throw new Error(`Custom world dimensions must be between ${WORLD_SIZE_LIMITS.min} and ${WORLD_SIZE_LIMITS.max}.`);
+  }
+  return { preset: "custom", width: value.width!, height: value.height! };
+}
+
 export interface GameIdentity {
   id: string;
   name: string;
@@ -24,6 +67,7 @@ export interface GameBlueprint {
   playerMode?: string;
   systems: string[];
   openQuestions: string[];
+  worldSize?: WorldSizeConfig;
 }
 
 export interface GameDnaContent {
@@ -150,6 +194,7 @@ export function createGameFoundation(
       ...input.blueprint,
       systems: input.blueprint?.systems ?? [],
       openQuestions: input.blueprint?.openQuestions ?? [],
+      worldSize: normalizeWorldSizeConfig(input.blueprint?.worldSize),
     },
     dnaVersions: normalizedDna.dnaVersions,
     activeVersionId: normalizedDna.activeVersionId,
