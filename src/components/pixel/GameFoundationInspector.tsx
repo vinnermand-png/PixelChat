@@ -1,4 +1,8 @@
-import type { GameFoundation } from "@/lib/gameFoundation/gameFoundation";
+import {
+  getActiveGameDna,
+  type GameFoundation,
+} from "@/lib/gameFoundation/gameFoundation";
+import { calculateFoundationReadiness } from "@/lib/gameFoundation/gameFoundationApi";
 
 export interface GameFoundationInspectorProps {
   foundation: GameFoundation | null;
@@ -31,21 +35,10 @@ export default function GameFoundationInspector({
     );
   }
 
-  const activeDna = foundation.activeVersionId
-    ? foundation.dnaVersions.find(
-        (version) => version.id === foundation.activeVersionId,
-      )
-    : undefined;
+  const activeDna = getActiveGameDna(foundation);
   const latestDna =
     foundation.dnaVersions[foundation.dnaVersions.length - 1];
-  const readinessEntries = [
-    foundation.readiness.blueprint !== undefined
-      ? `Blueprint: ${foundation.readiness.blueprint}`
-      : null,
-    foundation.readiness.dna !== undefined
-      ? `DNA: ${foundation.readiness.dna}`
-      : null,
-  ].filter((entry): entry is string => entry !== null);
+  const readiness = calculateFoundationReadiness(foundation);
 
   return (
     <section className="max-h-[80vh] overflow-y-auto border-2 border-[#a9df5a] bg-[#132019] p-4 text-[#d7f5a0]">
@@ -103,10 +96,12 @@ export default function GameFoundationInspector({
 
         <div>
           <p className="mb-1 text-xs uppercase text-[#6ee7d8]">Readiness</p>
-          <p>
-            {readinessEntries.length > 0
-              ? readinessEntries.join(" • ")
-              : "No readiness scores available yet."}
+          <p className="text-base font-semibold text-[#d7f5a0]">
+            {readiness.score}%
+          </p>
+          <p className="mt-1 text-xs text-white/60">
+            {readiness.label} • {readiness.completedStages}/
+            {readiness.totalStages} lifecycle/data checks complete
           </p>
         </div>
       </div>
