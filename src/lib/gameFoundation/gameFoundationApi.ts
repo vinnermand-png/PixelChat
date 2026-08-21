@@ -2,15 +2,29 @@ import {
   activateGameFoundation,
   createGameDnaVersion,
   createGameFoundation,
+  DEFAULT_WORLD_SIZE_CONFIG,
   getActiveGameDna,
   moveToDraft,
   moveToReview,
+  normalizeWorldSizeConfig,
+  WORLD_SIZE_LIMITS,
+  WORLD_SIZE_PRESETS,
   type CreateGameDnaVersionInput,
   type CreateGameFoundationInput,
   type GameBlueprint,
   type GameDnaVersion,
   type GameFoundation,
+  type WorldSizeConfig,
+  type WorldSizePreset,
 } from "./gameFoundation";
+
+export {
+  DEFAULT_WORLD_SIZE_CONFIG,
+  normalizeWorldSizeConfig,
+  WORLD_SIZE_LIMITS,
+  WORLD_SIZE_PRESETS,
+};
+export type { WorldSizeConfig, WorldSizePreset };
 
 export function createFoundation(
   input: CreateGameFoundationInput,
