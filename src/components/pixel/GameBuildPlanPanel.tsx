@@ -75,6 +75,7 @@ export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: Game
                     <div className="flex gap-2"><span className={`text-xs ${task.status === "current" ? "text-[#a9df5a]" : task.status === "complete" ? "text-[#6ee7d8]" : "text-white/35"}`}>{task.status === "complete" ? "✓" : task.status === "current" ? "●" : "○"}</span><div><p className="text-xs font-medium text-white/80">{task.title}</p><p className="mt-1 text-[10px] leading-4 text-white/40">{task.description}</p></div></div>
                   </div>)}
                 </div>
+              </article>)}
             </div>
             {executionMessage ? <p className="mt-4 rounded border border-[#6ee7d8]/25 bg-[#6ee7d8]/5 px-3 py-2 text-[10px] leading-4 text-[#8ff3e6]">✓ {executionMessage}</p> : null}
             {executionError ? <p className="mt-4 rounded border border-red-400/30 bg-red-400/5 px-3 py-2 text-[10px] leading-4 text-red-200">{executionError}</p> : null}
