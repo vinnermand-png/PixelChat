@@ -1,8 +1,6 @@
 import { useState } from "react";
 import {
   createFoundation,
-  createFoundationDnaVersion,
-  moveFoundationToDraft,
 } from "../../lib/gameFoundation/gameFoundationApi";
 import type { GameFoundation } from "../../lib/gameFoundation/gameFoundation";
 import {
@@ -93,17 +91,9 @@ export default function GameCreationDialog({
         blueprint: payload.blueprint,
       });
 
-      const foundationWithDna = moveFoundationToDraft(
-        createFoundationDnaVersion(foundation, {
-          id: crypto.randomUUID(),
-          version: "v1.0",
-          ...payload.dna,
-        }),
-      );
-
       const discovery = startDiscovery({
         id: crypto.randomUUID(),
-        foundation: foundationWithDna,
+        foundation,
       });
       const discoveryWithAiDraft = updateDiscoveryUnderstanding(
         discovery,
@@ -111,7 +101,7 @@ export default function GameCreationDialog({
       );
 
       onGameCreated({
-        foundation: foundationWithDna,
+        foundation,
         discoverySession: discoveryWithAiDraft,
       });
     } catch (createError) {
@@ -129,7 +119,7 @@ export default function GameCreationDialog({
     <div
       className="border-2 border-[#a9df5a] bg-[#132019] p-4 text-[#d7f5a0]"
       style={{
-        fontFamily: '\"Press Start 2P\", \"Courier New\", monospace',
+        fontFamily: '"Press Start 2P", "Courier New", monospace',
         fontSize: 10,
         lineHeight: 1.6,
       }}
