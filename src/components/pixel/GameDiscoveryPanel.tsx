@@ -24,6 +24,7 @@ const DIRECT_DISCOVERY_FIELDS = [
   ["Social Interaction", "social"],
   ["Progression", "progression"],
   ["Gameplay Goals", "goals"],
+  ["Visual Identity", "visual_direction"],
   ["Additional Notes", "other"],
 ] as const satisfies ReadonlyArray<
   readonly [string, GameDiscoveryQuestionCategory]
