@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   createFoundation,
   createFoundationDnaVersion,
+  moveFoundationToDraft,
   moveFoundationToReview,
 } from "../../lib/gameFoundation/gameFoundationApi";
 import type { GameFoundation } from "../../lib/gameFoundation/gameFoundation";
@@ -95,11 +96,13 @@ export default function GameCreationDialog({
       });
 
       const foundationWithDna = moveFoundationToReview(
-        createFoundationDnaVersion(foundation, {
-          id: crypto.randomUUID(),
-          version: "v1.0",
-          ...payload.dna,
-        }),
+        moveFoundationToDraft(
+          createFoundationDnaVersion(foundation, {
+            id: crypto.randomUUID(),
+            version: "v1.0",
+            ...payload.dna,
+          }),
+        ),
       );
 
       const discovery = startDiscovery({
