@@ -2,10 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AiDisabledError, requireAiEnabled } from "@/lib/ai/aiExecutionGuard";
 import { isValidAiToolRequest, type AiToolRequestV1 } from "@/lib/aiTool/aiToolRequest";
 import { generateTestMapBuilderResult } from "@/lib/aiTool/testMapBuilderGenerator";
-import { isValidMapBuilderAiResult } from "@/lib/aiTool/mapBuilderAiResult";
+import { isValidMapBuilderAiResultV2, MAP_BUILDER_MAX_OPERATIONS } from "@/lib/aiTool/mapBuilderAiResult";
+import { ASSET_LIBRARY } from "@/components/pixel/assets/assetLibrary";
+import { TERRAIN_LIBRARY } from "@/components/pixel/terrain/terrainAssetLibrary";
 
 const OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
 const OPENAI_TEXT_MODEL = "gpt-5.6-luna";
+
+const TERRAIN_ID_LIST = TERRAIN_LIBRARY.map((terrain) => terrain.id).join(", ");
+const OBJECT_ID_LIST = ASSET_LIBRARY.map((asset) => asset.id).join(", ");
 
 type OpenAiResponsesPayload = {
   output?: Array<{
@@ -21,10 +26,26 @@ type OpenAiResponsesPayload = {
 const responseSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["version", "summary"],
+  required: ["version", "summary", "operations"],
   properties: {
     version: { type: "integer" },
     summary: { type: "string", minLength: 1, maxLength: 2000 },
+    operations: {
+      type: "array",
+      minItems: 1,
+      maxItems: MAP_BUILDER_MAX_OPERATIONS,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["type", "target", "terrain", "object"],
+        properties: {
+          type: { type: "string", enum: ["paint-terrain", "place-object"] },
+          target: { type: "string", minLength: 1, maxLength: 80 },
+          terrain: { type: ["string", "null"], maxLength: 80 },
+          object: { type: ["string", "null"], maxLength: 80 },
+        },
+      },
+    },
   },
 } as const;
 
@@ -96,18 +117,18 @@ export const Route = createFileRoute("/api/ai-tool/map-builder")({
                   role: "system",
                   content: [{
                     type: "input_text",
-                    text: 'You are the PixelChat Map Builder assistant. The user describes a change they want for their current pixel world map. Understand the request in the context of the provided game and map state and return ONLY JSON matching the schema: {"version":1,"summary":"..."}. The summary must concretely restate what the Map Builder understood about the requested change, including any named locations or areas from the user\'s wording. Do not modify anything, do not produce coordinates, tiles, operations or map data, and do not output prose outside the JSON.',
+                    text: `You are the PixelChat Map Builder assistant. The user describes a change they want for their current pixel world map. Propose how to fulfill that request as a short list of read-only operations. You must NOT change anything, apply anything, or produce coordinates. Return ONLY JSON matching the schema: {"version":2,"summary":"...","operations":[...]}. The summary must concretely restate what you propose, including any named locations from the user's wording. Each operation must be exactly one of: paint-terrain (fields: terrain, target) or place-object (fields: object, target). Use ONLY these terrain identifiers: ${TERRAIN_ID_LIST}. Use ONLY these object identifiers: ${OBJECT_ID_LIST}. Every target is a short kebab-case semantic area label (for example 'forest-gathering-clearing'), never a coordinate or cell reference. Do not output prose outside the JSON.`,
                   }],
                 },
                 {
                   role: "user",
                   content: [{
                     type: "input_text",
-                    text: `${describeMapBuilderContext(body)}\n\nUser request:\n${body.request}`,
+                    text: `${describeMapBuilderContext(body)}\n\nUser request:\n${body.request}\n\nPropose between 1 and 8 concrete operations.`,
                   }],
                 },
               ],
-              text: { format: { type: "json_schema", name: "pixelchat_map_builder_result", strict: true, schema: responseSchema } },
+              text: { format: { type: "json_schema", name: "pixelchat_map_builder_result_v2", strict: true, schema: responseSchema } },
             }),
           });
 
@@ -135,8 +156,8 @@ export const Route = createFileRoute("/api/ai-tool/map-builder")({
             return json({ error: "OpenAI returned malformed structured Map Builder data." }, 502);
           }
 
-          if (!isValidMapBuilderAiResult(parsed)) {
-            return json({ error: "OpenAI returned an invalid structured Map Builder result." }, 502);
+          if (!isValidMapBuilderAiResultV2(parsed)) {
+            return json({ error: "OpenAI returned an invalid structured Map Builder proposal." }, 502);
           }
 
           return json(parsed);
