@@ -124,7 +124,7 @@ export default function GameMakerV2() {
   const commitChange = (nextWorld: WorldData, nextObjects: PlacedObject[]) => { const previous = currentSnapshot(); const next = cloneSnapshot({ world: nextWorld, objects: nextObjects }); setHistory((current) => ({ past: [...current.past, previous], future: [] })); applySnapshot(next); setMapStatus("Not saved"); };
   const updateSavedMapLibrary = (nextMaps: SavedMapRecord[], activeId: string) => { const stored = readSavedMapLibrary(); const records = new Map(stored.maps.map((record) => [record.map.id, record])); nextMaps.forEach((record) => records.set(record.map.id, record)); const mergedMaps = Array.from(records.values()); const nextLibrary = createLibrary(activeId, mergedMaps); setSavedMaps(mergedMaps); writeSavedMapLibrary(nextLibrary); };
   const saveMap = () => { const map = cloneMap({ version: 1, id: mapId, name: mapName.trim() || `MAP${String(savedMaps.length + 1).padStart(2, "0")}`, world, foundation: { edgeMaterial, edgeDepth }, objects }); const savedAt = Date.now(); const nextMaps = [...savedMaps.filter((record) => record.map.id !== map.id), { map, savedAt }]; setMapId(map.id); setMapName(map.name); setSavedMaps(nextMaps); writeSavedMapLibrary(createLibrary(map.id, nextMaps)); localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(map)); setMapStatus(`Saved ${map.name}`); };
-  const loadMapData = (map: PixelChatMapV1) => { const next = cloneMap(map); setMapId(next.id); setMapName(next.name); setWorld(next.world); setObjects(next.objects); setEdgeMaterial(next.foundation.edgeMaterial); setEdgeDepth(Math.max(MIN_EDGE_DEPTH, Math.min(MAX_EDGE_DEPTH, next.foundation.edgeDepth))); setHistory(EMPTY_HISTORY); setSelectedObjectId(null); setHover(null); setTool("paint"); setMode("edit"); setPlayer(null); setMapStatus(`Loaded ${next.name}`); localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(next)); const nextMaps = savedMaps.length ? savedMaps : [{ map: next, savedAt: Date.now() }]; updateSavedMapLibrary(nextMaps, next.id); };
+  const loadMapData = (map: PixelChatMapV1) => { const next = cloneMap(map); setMapId(next.id); setMapName(next.name); setWorld(next.world); setObjects(next.objects); setEdgeMaterial(next.foundation.edgeMaterial); setEdgeDepth(Math.max(MIN_EDGE_DEPTH, Math.min(MAX_EDGE_DEPTH, next.foundation.edgeDepth))); setHistory(EMPTY_HISTORY); setSelectedObjectId(null); setHover(null); setTool("paint"); setMode("edit"); setPlayer(null); setMapStatus(`Loaded ${next.name}`); localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(next)); const nextMaps = [...savedMaps.filter((record) => record.map.id !== next.id), { map: next, savedAt: Date.now() }]; updateSavedMapLibrary(nextMaps, next.id); };
   const loadSavedMap = () => setIsSavedMapsOpen(true);
   const deleteMap = (targetId: string) => {
     const target = savedMaps.find((record) => record.map.id === targetId);
@@ -134,7 +134,7 @@ export default function GameMakerV2() {
       const nextLibrary = deleteSavedMap<PixelChatMapV1>(targetId);
       setSavedMaps(nextLibrary.maps);
       if (wasActive) {
-        const initialMap = createEmptyMap();
+        const initialMap = createEmptyMap(createMapId());
         localStorage.removeItem(MAP_STORAGE_KEY);
         setMapId(initialMap.id);
         setMapName(initialMap.name);
@@ -202,7 +202,7 @@ export default function GameMakerV2() {
       }
     }
 
-    const initialMap = createEmptyMap();
+    const initialMap = createEmptyMap(createMapId());
     setMapId(initialMap.id);
     setMapName(initialMap.name);
     setWorld(initialMap.world);

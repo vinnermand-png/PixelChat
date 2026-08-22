@@ -308,9 +308,7 @@ export function materializeCompletedWorld(): { changed: boolean; summary: string
   if (!changed) return { changed: false, summary: "World already materialized; no duplicate areas, objects or markers were added." };
 
   localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(map));
-  const loadButton = Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Load");
-  if (!loadButton) throw new Error("The existing GameMaker Load action is unavailable.");
-  loadButton.click();
+  window.dispatchEvent(new CustomEvent("pixelchat-game-maker-internal-load-map", { detail: { map } }));
 
   return {
     changed: true,
