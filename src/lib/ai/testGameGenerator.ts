@@ -49,5 +49,12 @@ export function generateTestGameResponse(
       visualIdentity: "Bright, colorful, readable pixel art designed for quick navigation and social readability.",
       assetIdentity: "Simple, consistent pixel-art terrain, props, landmarks, buildings, and social spaces with strong silhouettes.",
     },
+    worldSeeds: {
+      keyLocations: [
+        { label: `${name} Meeting Square`, kind: "social" as const },
+        { label: "Welcome Grove", kind: "core" as const },
+        { label: "Scenic Overlook Trail", kind: "adventure" as const },
+      ],
+    },
   };
 }

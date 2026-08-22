@@ -345,7 +345,8 @@ function defineKeyLocations(map: StoredMap, plan: GameBuildPlan): StoredMap {
     throw new Error("The existing player entry point must remain valid before key locations can be defined.");
   }
 
-  const definitions = deriveKeyLocationKinds(plan.sourceSummary);
+  const seededDefinitions = (plan.worldSeeds ?? []).map((seed) => ({ kind: seed.kind as KeyLocationKind, label: seed.label }));
+  const definitions = seededDefinitions.length ? seededDefinitions : deriveKeyLocationKinds(plan.sourceSummary);
   const existingByKind = new Map((structure.keyLocations ?? []).map((location) => [location.kind, location]));
   const used = new Set((structure.keyLocations ?? []).map((location) => cellKey(location.gx, location.gy)));
   const keyLocations = definitions.map((definition, index) => {

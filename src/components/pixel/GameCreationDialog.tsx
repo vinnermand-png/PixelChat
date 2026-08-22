@@ -114,6 +114,7 @@ export default function GameCreationDialog({
         blueprint: {
           ...payload.blueprint,
           worldSize,
+          ...(payload.worldSeeds ? { worldSeeds: payload.worldSeeds } : {}),
         },
       });
 

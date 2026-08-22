@@ -1,7 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AiDisabledError, requireAiEnabled } from "@/lib/ai/aiExecutionGuard";
 import { generateTestGameResponse } from "@/lib/ai/testGameGenerator";
-import { normalizeWorldSizeConfig, type WorldSizeConfig } from "@/lib/gameFoundation/gameFoundation";
+import {
+  WORLD_SEED_KEY_LOCATION_KINDS,
+  normalizeWorldSizeConfig,
+  normalizeWorldSeeds,
+  type WorldSizeConfig,
+  type WorldSeedKeyLocation,
+  type WorldSeedKeyLocationKind,
+} from "@/lib/gameFoundation/gameFoundation";
 
 export type GeneratedGameResponse = {
   game: { name: string };
@@ -32,6 +39,12 @@ export type GeneratedGameResponse = {
     visualIdentity: string;
     assetIdentity: string;
   };
+  worldSeeds?: {
+    keyLocations: Array<{
+      label: string;
+      kind: WorldSeedKeyLocationKind;
+    }>;
+  };
 };
 
 type OpenAiResponsesPayload = {
@@ -51,11 +64,12 @@ const MAX_CONCEPT_LENGTH = 8000;
 const MAX_FIELD_LENGTH = 2000;
 const MAX_SHORT_FIELD_LENGTH = 240;
 const MAX_LIST_ITEMS = 12;
+const MAX_WORLD_SEED_LOCATIONS = 6;
 
 const responseSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["game", "blueprint", "discovery", "dna"],
+  required: ["game", "blueprint", "discovery", "dna", "worldSeeds"],
   properties: {
     game: {
       type: "object",
@@ -103,6 +117,27 @@ const responseSchema = {
         worldIdentity: { type: "string", minLength: 1, maxLength: MAX_FIELD_LENGTH },
         visualIdentity: { type: "string", minLength: 1, maxLength: MAX_FIELD_LENGTH },
         assetIdentity: { type: "string", minLength: 1, maxLength: MAX_FIELD_LENGTH },
+      },
+    },
+    worldSeeds: {
+      type: "object",
+      additionalProperties: false,
+      required: ["keyLocations"],
+      properties: {
+        keyLocations: {
+          type: "array",
+          minItems: 1,
+          maxItems: MAX_WORLD_SEED_LOCATIONS,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["label", "kind"],
+            properties: {
+              label: { type: "string", minLength: 1, maxLength: 60 },
+              kind: { enum: [...WORLD_SEED_KEY_LOCATION_KINDS] },
+            },
+          },
+        },
       },
     },
   },
@@ -174,6 +209,7 @@ function validateGeneratedGame(value: unknown): GeneratedGameResponse {
       visualIdentity: validateString(dnaRecord.visualIdentity, "dna.visualIdentity", MAX_FIELD_LENGTH),
       assetIdentity: validateString(dnaRecord.assetIdentity, "dna.assetIdentity", MAX_FIELD_LENGTH),
     },
+    worldSeeds: normalizeWorldSeeds(data.worldSeeds, MAX_WORLD_SEED_LOCATIONS),
   };
 }
 
@@ -227,14 +263,14 @@ export const Route = createFileRoute("/api/generate-game")({
                   role: "system",
                   content: [{
                     type: "input_text",
-                    text: "You are the PixelChat game creation designer. Turn the user's concept into concise, concrete game-design data. Return only the requested structured JSON. Preserve the user's intent, favor social multiplayer readability, and keep all values directly useful for the existing GameFoundation, GameDiscoverySession, and GameDnaVersion models. Do not invent technical implementation details or new schemas. World size is a hard design constraint: Small worlds stay compact, Medium worlds balance social/core space and exploration, Large worlds support multiple connected areas and more exploration, and Huge worlds support broad exploration and more room for locations.",
+                    text: "You are the PixelChat game creation designer. Turn the user's concept into concise, concrete game-design data. Return only the requested structured JSON. Preserve the user's intent, favor social multiplayer readability, and keep all values directly useful for the existing GameFoundation, GameDiscoverySession, and GameDnaVersion models. Do not invent technical implementation details or new schemas. World size is a hard design constraint: Small worlds stay compact, Medium worlds balance social/core space and exploration, Large worlds support multiple connected areas and more exploration, and Huge worlds support broad exploration and more room for locations.\n\nWorld Seeds: worldSeeds.keyLocations is a list of 3-6 named key locations that capture this specific game's world identity as semantic building intentions. Each location needs an evocative, concrete label that could only belong to this game (for example 'Fisherman's Dock' or 'Moonlight Market'), never a generic name like 'Fishing Location'. Each kind must be exactly one of: fishing, farming, combat, adventure, social, core - pick the kind matching the location's main player activity. World Seeds are semantic intentions only: do NOT provide coordinates, tiles, terrain data, or individual object lists.",
                   }],
                 },
                 {
                   role: "user",
                   content: [{
                     type: "input_text",
-                    text: `Preferred game name: ${gameName}\n\nSelected world size: ${worldSize.preset} (${worldSize.width}x${worldSize.height}).\nDesign the game concept, Discovery, and Game DNA to fit this amount of world space.\n\nGame concept:\n${concept}`,
+                    text: `Preferred game name: ${gameName}\n\nSelected world size: ${worldSize.preset} (${worldSize.width}x${worldSize.height}).\nDesign the game concept, Discovery, and Game DNA to fit this amount of world space.\nAlso design worldSeeds.keyLocations: 3-6 named key locations that express this exact concept (kinds: fishing, farming, combat, adventure, social, core).\n\nGame concept:\n${concept}`,
                   }],
                 },
               ],

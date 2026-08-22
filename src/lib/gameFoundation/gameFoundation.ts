@@ -60,6 +60,54 @@ export interface GameIdentity {
   updatedAt: string;
 }
 
+export type WorldSeedKeyLocationKind =
+  | "fishing"
+  | "farming"
+  | "combat"
+  | "adventure"
+  | "social"
+  | "core";
+
+export const WORLD_SEED_KEY_LOCATION_KINDS: readonly WorldSeedKeyLocationKind[] = [
+  "fishing",
+  "farming",
+  "combat",
+  "adventure",
+  "social",
+  "core",
+];
+
+export interface WorldSeedKeyLocation {
+  label: string;
+  kind: WorldSeedKeyLocationKind;
+}
+
+export interface WorldSeeds {
+  keyLocations: WorldSeedKeyLocation[];
+}
+
+export function normalizeWorldSeeds(input: unknown, maxKeyLocations = 6): WorldSeeds | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const keyLocations = (input as { keyLocations?: unknown }).keyLocations;
+  if (!Array.isArray(keyLocations)) return undefined;
+  const normalized: WorldSeedKeyLocation[] = [];
+  const seenLabels = new Set<string>();
+  for (const entry of keyLocations) {
+    if (!entry || typeof entry !== "object") continue;
+    const candidate = entry as { label?: unknown; kind?: unknown };
+    const label = typeof candidate.label === "string" ? candidate.label.trim() : "";
+    const kind = candidate.kind;
+    if (!label || label.length > 60) continue;
+    if (typeof kind !== "string" || !WORLD_SEED_KEY_LOCATION_KINDS.includes(kind as WorldSeedKeyLocationKind)) continue;
+    const dedupeKey = `${label.toLowerCase()}::${kind}`;
+    if (seenLabels.has(dedupeKey)) continue;
+    seenLabels.add(dedupeKey);
+    normalized.push({ label, kind: kind as WorldSeedKeyLocationKind });
+    if (normalized.length >= maxKeyLocations) break;
+  }
+  return normalized.length ? { keyLocations: normalized } : undefined;
+}
+
 export interface GameBlueprint {
   concept?: string;
   coreExperience?: string;
@@ -68,6 +116,7 @@ export interface GameBlueprint {
   systems: string[];
   openQuestions: string[];
   worldSize?: WorldSizeConfig;
+  worldSeeds?: WorldSeeds;
 }
 
 export interface GameDnaContent {

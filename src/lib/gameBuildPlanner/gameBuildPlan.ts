@@ -1,4 +1,4 @@
-import type { WorldSizeConfig } from "@/lib/gameFoundation/gameFoundation";
+import type { WorldSeedKeyLocation, WorldSizeConfig } from "@/lib/gameFoundation/gameFoundation";
 
 export type GameBuildTaskStatus = "pending" | "current" | "complete";
 
@@ -22,6 +22,7 @@ export interface GameBuildPlan {
   gameName: string;
   sourceSummary: string;
   worldSize?: WorldSizeConfig;
+  worldSeeds?: WorldSeedKeyLocation[];
   phases: GameBuildPhase[];
   currentTaskId?: string;
   createdAt: string;

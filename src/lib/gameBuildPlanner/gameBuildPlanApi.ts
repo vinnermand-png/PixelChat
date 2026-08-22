@@ -1,5 +1,5 @@
 import type { GameDiscoverySession } from "@/lib/gameDiscovery/gameDiscovery";
-import { DEFAULT_WORLD_SIZE_CONFIG, normalizeWorldSizeConfig, type GameFoundation } from "@/lib/gameFoundation/gameFoundation";
+import { DEFAULT_WORLD_SIZE_CONFIG, normalizeWorldSizeConfig, normalizeWorldSeeds, type GameFoundation } from "@/lib/gameFoundation/gameFoundation";
 import type { GameBuildPhase, GameBuildPlan, GameBuildTask } from "./gameBuildPlan";
 
 function createTask(title: string, description: string): GameBuildTask {
@@ -47,6 +47,8 @@ export function generateGameBuildPlan(input: {
   const isFarming = includesAny(text, ["farm", "farming", "crop", "harvest"]);
   const worldLabel = isFarming ? "Starter Farm" : isRpg ? "Starter Adventure Area" : isSocialWorld ? "Starter Social Hub" : "Starter World";
   const sizeGuidance = worldSizeGuidance(worldSize);
+  const worldSeeds = normalizeWorldSeeds(foundation.blueprint.worldSeeds)?.keyLocations;
+  const seedSummary = worldSeeds?.length ? ` Seeded locations: ${worldSeeds.map((seed) => `${seed.label} (${seed.kind})`).join(", ")}.` : "";
 
   const phases: GameBuildPhase[] = [
     {
@@ -74,12 +76,12 @@ export function generateGameBuildPlan(input: {
         ? [
             createTask("Define player spawn", "Choose a clear arrival point that introduces the shared world."),
             createTask("Define central gathering area", "Create the main social focal point based on the Discovery goals."),
-            createTask("Define key social locations", `Place the primary locations that support chat, meeting and return visits within the ${worldSize.preset} world scale.`),
+            createTask("Define key social locations", `Place the primary locations that support chat, meeting and return visits within the ${worldSize.preset} world scale.${seedSummary}`),
           ]
         : [
             createTask("Define player entry", "Choose the first point where the player enters the core experience."),
             createTask("Define central gameplay area", "Create the main space that supports the core player activity."),
-            createTask("Define key locations", `Place the important locations required by the current game concept within the ${worldSize.preset} world scale.`),
+            createTask("Define key locations", `Place the important locations required by the current game concept within the ${worldSize.preset} world scale.${seedSummary}`),
           ],
     },
     {
@@ -112,6 +114,7 @@ export function generateGameBuildPlan(input: {
     gameName: foundation.game.name,
     sourceSummary: [`World Size: ${worldSize.preset} ${worldSize.width}x${worldSize.height}`, sizeGuidance, discovery?.understanding.gameType, discovery?.understanding.coreExperience, dna?.creativeAnchor].filter(Boolean).join(" · ") || foundation.blueprint.concept || "Game data is ready for the first build plan.",
     worldSize,
+    worldSeeds,
     phases,
     currentTaskId: firstTask?.id,
     createdAt: now,
