@@ -4,6 +4,7 @@ export const MAP_LIBRARY_VERSION = 1;
 export type MapLibraryRecord<TMap> = {
   map: TMap;
   savedAt: number;
+  gameSessionId?: string;
 };
 
 export type MapLibraryState<TMap> = {
@@ -18,7 +19,25 @@ export function isMapLibraryState<TMap>(value: unknown): value is MapLibraryStat
   return state.version === MAP_LIBRARY_VERSION
     && typeof state.activeMapId === "string"
     && Array.isArray(state.maps)
-    && state.maps.every((entry) => Boolean(entry) && typeof entry === "object" && typeof (entry as MapLibraryRecord<TMap>).savedAt === "number" && Boolean((entry as MapLibraryRecord<TMap>).map));
+    && state.maps.every((entry) => Boolean(entry) && typeof entry === "object" && typeof (entry as MapLibraryRecord<TMap>).savedAt === "number" && Boolean((entry as MapLibraryRecord<TMap>).map) && ((entry as MapLibraryRecord<TMap>).gameSessionId === undefined || typeof (entry as MapLibraryRecord<TMap>).gameSessionId === "string"));
+}
+
+export function readActiveSavedMapSessionId(mapStorageKey: string): string | null {
+  try {
+    const rawMap = localStorage.getItem(mapStorageKey);
+    const rawLibrary = localStorage.getItem(MAP_LIBRARY_STORAGE_KEY);
+    if (!rawMap || !rawLibrary) return null;
+    const parsedMap: unknown = JSON.parse(rawMap);
+    const mapId = typeof parsedMap === "object" && parsedMap !== null && typeof (parsedMap as { id?: unknown }).id === "string" ? (parsedMap as { id: string }).id : null;
+    if (!mapId || !mapId.trim()) return null;
+    const parsedLibrary: unknown = JSON.parse(rawLibrary);
+    if (!isMapLibraryState(parsedLibrary)) return null;
+    const record = parsedLibrary.maps.find((entry) => (entry.map as { id?: unknown }).id === mapId);
+    const sessionId = record?.gameSessionId;
+    return typeof sessionId === "string" && sessionId.trim() ? sessionId : null;
+  } catch {
+    return null;
+  }
 }
 
 export function deleteSavedMap<TMap>(mapId: string): MapLibraryState<TMap> {
