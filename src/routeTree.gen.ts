@@ -10,33 +10,115 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CharacterTestRouteImport } from './routes/character-test'
+import { Route as GameMakerRouteImport } from './routes/game-maker'
+import { Route as ApiGenerateAssetRouteImport } from './routes/api/generate-asset'
+import { Route as ApiGenerateGameRouteImport } from './routes/api/generate-game'
+import { Route as ApiAiToolMapBuilderRouteImport } from './routes/api/ai-tool/map-builder'
+import { Route as ApiAiStatusRouteImport } from './routes/api/ai/status'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CharacterTestRoute = CharacterTestRouteImport.update({
+  id: '/character-test',
+  path: '/character-test',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GameMakerRoute = GameMakerRouteImport.update({
+  id: '/game-maker',
+  path: '/game-maker',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiGenerateAssetRoute = ApiGenerateAssetRouteImport.update({
+  id: '/api/generate-asset',
+  path: '/api/generate-asset',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiGenerateGameRoute = ApiGenerateGameRouteImport.update({
+  id: '/api/generate-game',
+  path: '/api/generate-game',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAiToolMapBuilderRoute = ApiAiToolMapBuilderRouteImport.update({
+  id: '/api/ai-tool/map-builder',
+  path: '/api/ai-tool/map-builder',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAiStatusRoute = ApiAiStatusRouteImport.update({
+  id: '/api/ai/status',
+  path: '/api/ai/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/character-test': typeof CharacterTestRoute
+  '/game-maker': typeof GameMakerRoute
+  '/api/generate-asset': typeof ApiGenerateAssetRoute
+  '/api/generate-game': typeof ApiGenerateGameRoute
+  '/api/ai-tool/map-builder': typeof ApiAiToolMapBuilderRoute
+  '/api/ai/status': typeof ApiAiStatusRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/character-test': typeof CharacterTestRoute
+  '/game-maker': typeof GameMakerRoute
+  '/api/generate-asset': typeof ApiGenerateAssetRoute
+  '/api/generate-game': typeof ApiGenerateGameRoute
+  '/api/ai-tool/map-builder': typeof ApiAiToolMapBuilderRoute
+  '/api/ai/status': typeof ApiAiStatusRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/character-test': typeof CharacterTestRoute
+  '/game-maker': typeof GameMakerRoute
+  '/api/generate-asset': typeof ApiGenerateAssetRoute
+  '/api/generate-game': typeof ApiGenerateGameRoute
+  '/api/ai-tool/map-builder': typeof ApiAiToolMapBuilderRoute
+  '/api/ai/status': typeof ApiAiStatusRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/character-test'
+    | '/game-maker'
+    | '/api/generate-asset'
+    | '/api/generate-game'
+    | '/api/ai-tool/map-builder'
+    | '/api/ai/status'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/character-test'
+    | '/game-maker'
+    | '/api/generate-asset'
+    | '/api/generate-game'
+    | '/api/ai-tool/map-builder'
+    | '/api/ai/status'
+  id:
+    | '__root__'
+    | '/'
+    | '/character-test'
+    | '/game-maker'
+    | '/api/generate-asset'
+    | '/api/generate-game'
+    | '/api/ai-tool/map-builder'
+    | '/api/ai/status'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CharacterTestRoute: typeof CharacterTestRoute
+  GameMakerRoute: typeof GameMakerRoute
+  ApiGenerateAssetRoute: typeof ApiGenerateAssetRoute
+  ApiGenerateGameRoute: typeof ApiGenerateGameRoute
+  ApiAiToolMapBuilderRoute: typeof ApiAiToolMapBuilderRoute
+  ApiAiStatusRoute: typeof ApiAiStatusRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +130,59 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/character-test': {
+      id: '/character-test'
+      path: '/character-test'
+      fullPath: '/character-test'
+      preLoaderRoute: typeof CharacterTestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/game-maker': {
+      id: '/game-maker'
+      path: '/game-maker'
+      fullPath: '/game-maker'
+      preLoaderRoute: typeof GameMakerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/generate-asset': {
+      id: '/api/generate-asset'
+      path: '/api/generate-asset'
+      fullPath: '/api/generate-asset'
+      preLoaderRoute: typeof ApiGenerateAssetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/generate-game': {
+      id: '/api/generate-game'
+      path: '/api/generate-game'
+      fullPath: '/api/generate-game'
+      preLoaderRoute: typeof ApiGenerateGameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ai-tool/map-builder': {
+      id: '/api/ai-tool/map-builder'
+      path: '/api/ai-tool/map-builder'
+      fullPath: '/api/ai-tool/map-builder'
+      preLoaderRoute: typeof ApiAiToolMapBuilderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ai/status': {
+      id: '/api/ai/status'
+      path: '/api/ai/status'
+      fullPath: '/api/ai/status'
+      preLoaderRoute: typeof ApiAiStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CharacterTestRoute: CharacterTestRoute,
+  GameMakerRoute: GameMakerRoute,
+  ApiGenerateAssetRoute: ApiGenerateAssetRoute,
+  ApiGenerateGameRoute: ApiGenerateGameRoute,
+  ApiAiToolMapBuilderRoute: ApiAiToolMapBuilderRoute,
+  ApiAiStatusRoute: ApiAiStatusRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
