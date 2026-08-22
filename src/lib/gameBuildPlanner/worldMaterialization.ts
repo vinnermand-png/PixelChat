@@ -5,13 +5,20 @@ type GridPoint = { gx: number; gy: number };
 type WorldBounds = { minX: number; minY: number; maxX: number; maxY: number };
 type TerrainZone = { terrainId: TerrainId; bounds: WorldBounds };
 type TerrainPath = { points: GridPoint[]; terrainId: "dirt" };
+type KeyLocation = { id: string; label: string; kind: string; gx: number; gy: number; worldId: string; mapId: string };
+type ExplorableZone = { id: string; label: string; bounds: WorldBounds; center: GridPoint; worldId: string; mapId: string };
+type ImportantLandmark = { id: string; label: string; kind: string; gx: number; gy: number; worldId: string; mapId: string };
 type MaterializationStructure = {
   dimensions?: { width: number; height: number; bounds: WorldBounds };
   playerEntry?: { gx: number; gy: number; worldId: string; mapId: string };
   centralGameplayArea?: { center: GridPoint; bounds: WorldBounds; worldId: string; mapId: string };
+  keyLocations?: KeyLocation[];
+  additionalExplorableZones?: ExplorableZone[];
+  importantLandmarks?: ImportantLandmark[];
   terrain?: { zones?: TerrainZone[]; paths?: TerrainPath[] };
   playable?: { id: string };
 };
+type PlacedObject = { id: string; assetId: string; gx: number; gy: number };
 type StoredMap = {
   version: 1;
   id: string;
@@ -24,7 +31,7 @@ type StoredMap = {
     structure?: MaterializationStructure;
   };
   foundation: { edgeMaterial: "soil" | "rock" | "cliff"; edgeDepth: number };
-  objects: Array<{ id: string; assetId: string; gx: number; gy: number }>;
+  objects: PlacedObject[];
 };
 
 function cellKey(point: GridPoint) {
@@ -86,6 +93,84 @@ function materializeArea(
   }, false);
 }
 
+function materializePointSet(
+  terrain: Record<string, TerrainId>,
+  bounds: WorldBounds,
+  terrainId: TerrainId,
+  zones: TerrainZone[],
+) {
+  const center = {
+    gx: Math.floor((bounds.minX + bounds.maxX) / 2),
+    gy: Math.floor((bounds.minY + bounds.maxY) / 2),
+  };
+  const points: GridPoint[] = [
+    center,
+    { gx: center.gx - 1, gy: center.gy },
+    { gx: center.gx + 1, gy: center.gy },
+    { gx: center.gx, gy: center.gy - 1 },
+    { gx: center.gx, gy: center.gy + 1 },
+    { gx: center.gx - 1, gy: center.gy - 1 },
+    { gx: center.gx + 1, gy: center.gy + 1 },
+  ];
+  return points.reduce((didChange, point) => {
+    if (!inBounds(point, bounds)) return didChange;
+    return setMaterializedTerrain(terrain, point, terrainId, getBaseTerrainAt(point, zones)) || didChange;
+  }, false);
+}
+
+function keyLocationTerrain(kind: string): TerrainId {
+  const value = kind.toLowerCase();
+  if (value === "fishing") return "sand";
+  if (value === "combat") return "stone";
+  if (value === "adventure") return "dirt";
+  return "dirt";
+}
+
+function explorableZoneTerrain(label: string): TerrainId {
+  const value = label.toLowerCase();
+  if (/beach|shore|harbor|harbour|coast|dock|pier/.test(value)) return "sand";
+  if (/forest|wood|woods|grove/.test(value)) return "grass";
+  if (/mountain|rock|cliff|cave/.test(value)) return "stone";
+  return "dirt";
+}
+
+function addMaterializedObject(objects: PlacedObject[], object: PlacedObject) {
+  if (objects.some((candidate) => candidate.id === object.id)) return false;
+  objects.push(object);
+  return true;
+}
+
+function materializeForestMarker(objects: PlacedObject[], zone: ExplorableZone, dimensions: WorldBounds) {
+  const offsets = [
+    { gx: 0, gy: 0 },
+    { gx: -2, gy: 1 },
+    { gx: 2, gy: -1 },
+  ];
+  let changed = false;
+  offsets.forEach((offset, index) => {
+    const point = { gx: zone.center.gx + offset.gx, gy: zone.center.gy + offset.gy };
+    if (!inBounds(point, dimensions)) return;
+    changed ||= addMaterializedObject(objects, {
+      id: `materialized-zone-${zone.id}-${index + 1}`,
+      assetId: "testTree",
+      gx: point.gx,
+      gy: point.gy,
+    });
+  });
+  return changed;
+}
+
+function materializeLandmark(objects: PlacedObject[], landmark: ImportantLandmark, dimensions: WorldBounds) {
+  const point = { gx: landmark.gx, gy: landmark.gy };
+  if (!inBounds(point, dimensions)) throw new Error(`Important landmark ${landmark.id} is outside the playable world bounds.`);
+  return addMaterializedObject(objects, {
+    id: `materialized-landmark-${landmark.id}`,
+    assetId: "testLargeTree",
+    gx: point.gx,
+    gy: point.gy,
+  });
+}
+
 export function materializeCompletedWorld(): { changed: boolean; summary: string } {
   if (typeof window === "undefined") throw new Error("World materialization requires the browser GameMaker runtime.");
   const map = parseStoredMap(localStorage.getItem(MAP_STORAGE_KEY));
@@ -93,6 +178,9 @@ export function materializeCompletedWorld(): { changed: boolean; summary: string
   const dimensions = structure.dimensions;
   const zones = structure.terrain?.zones ?? [];
   const paths = structure.terrain?.paths ?? [];
+  const keyLocations = structure.keyLocations ?? [];
+  const additionalExplorableZones = structure.additionalExplorableZones ?? [];
+  const importantLandmarks = structure.importantLandmarks ?? [];
   const playerEntry = structure.playerEntry;
   const centralGameplayArea = structure.centralGameplayArea;
 
@@ -105,8 +193,18 @@ export function materializeCompletedWorld(): { changed: boolean; summary: string
   if (centralGameplayArea.worldId !== structure.playable.id || centralGameplayArea.mapId !== map.id) {
     throw new Error("The central gameplay area does not reference the active world and map.");
   }
+  if (keyLocations.some((location) => location.worldId !== structure.playable!.id || location.mapId !== map.id)) {
+    throw new Error("A key location does not reference the active world and map.");
+  }
+  if (additionalExplorableZones.some((zone) => zone.worldId !== structure.playable!.id || zone.mapId !== map.id)) {
+    throw new Error("An explorable zone does not reference the active world and map.");
+  }
+  if (importantLandmarks.some((landmark) => landmark.worldId !== structure.playable!.id || landmark.mapId !== map.id)) {
+    throw new Error("An important landmark does not reference the active world and map.");
+  }
 
   const terrain = { ...map.world.terrain };
+  const objects = map.objects.map((object) => ({ ...object }));
   let changed = false;
 
   const gridSize = Math.max(dimensions.width, dimensions.height);
@@ -143,12 +241,42 @@ export function materializeCompletedWorld(): { changed: boolean; summary: string
     }
   }
 
+  for (const location of keyLocations) {
+    const point = { gx: location.gx, gy: location.gy };
+    if (!inBounds(point, dimensions.bounds)) throw new Error(`Key location ${location.id} is outside the playable world bounds.`);
+    const bounds = { minX: point.gx - 1, minY: point.gy - 1, maxX: point.gx + 1, maxY: point.gy + 1 };
+    changed ||= materializePointSet(terrain, bounds, keyLocationTerrain(location.kind), zones);
+  }
+
+  for (const zone of additionalExplorableZones) {
+    const bounds = {
+      minX: Math.max(dimensions.bounds.minX, zone.bounds.minX),
+      minY: Math.max(dimensions.bounds.minY, zone.bounds.minY),
+      maxX: Math.min(dimensions.bounds.maxX, zone.bounds.maxX),
+      maxY: Math.min(dimensions.bounds.maxY, zone.bounds.maxY),
+    };
+    if (bounds.minX > bounds.maxX || bounds.minY > bounds.maxY) throw new Error(`Explorable zone ${zone.id} is outside the playable world bounds.`);
+    const zoneTerrain = explorableZoneTerrain(zone.label);
+    changed ||= materializePointSet(terrain, bounds, zoneTerrain, zones);
+    if (zoneTerrain === "grass") {
+      changed ||= materializeForestMarker(objects, zone, dimensions.bounds);
+    }
+  }
+
+  for (const landmark of importantLandmarks) {
+    changed ||= materializeLandmark(objects, landmark, dimensions.bounds);
+  }
+
   if (JSON.stringify(map.world.terrain) !== JSON.stringify(terrain)) {
     map.world.terrain = terrain;
     changed = true;
   }
+  if (JSON.stringify(map.objects) !== JSON.stringify(objects)) {
+    map.objects = objects;
+    changed = true;
+  }
 
-  if (!changed) return { changed: false, summary: "World already materialized; no duplicate terrain or markers were added." };
+  if (!changed) return { changed: false, summary: "World already materialized; no duplicate areas, objects or markers were added." };
 
   localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(map));
   const loadButton = Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Load");
@@ -157,6 +285,6 @@ export function materializeCompletedWorld(): { changed: boolean; summary: string
 
   return {
     changed: true,
-    summary: `Materialized ${dimensions.width} × ${dimensions.height} world bounds, terrain paths, central gathering area and player entry into the existing GameMaker map.`,
+    summary: `Materialized ${dimensions.width} × ${dimensions.height} world bounds, terrain paths, central area, ${keyLocations.length} key location(s), ${additionalExplorableZones.length} explorable zone(s) and ${importantLandmarks.length} landmark(s) into the existing GameMaker map.`,
   };
 }
