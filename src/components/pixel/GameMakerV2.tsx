@@ -218,6 +218,25 @@ export default function GameMakerV2() {
     setMapStatus("MAP01 ready");
   }, []);
 
+  useEffect(() => {
+    const handleInternalSave = (event: Event) => {
+      const detail = (event as CustomEvent<{ map: PixelChatMapV1 | null }>).detail;
+      if (!detail) return;
+      detail.map = cloneMap({ version: 1, id: mapId, name: mapName.trim() || DEFAULT_MAP_NAME, world, foundation: { edgeMaterial, edgeDepth }, objects });
+    };
+    const handleInternalLoad = (event: Event) => {
+      const detail = (event as CustomEvent<{ map?: PixelChatMapV1 }>).detail;
+      if (!detail?.map || !isValidMap(detail.map)) return;
+      loadMapData(detail.map);
+    };
+    window.addEventListener("pixelchat-game-maker-internal-save-map", handleInternalSave);
+    window.addEventListener("pixelchat-game-maker-internal-load-map", handleInternalLoad);
+    return () => {
+      window.removeEventListener("pixelchat-game-maker-internal-save-map", handleInternalSave);
+      window.removeEventListener("pixelchat-game-maker-internal-load-map", handleInternalLoad);
+    };
+  }, [mapId, mapName, world, objects, edgeMaterial, edgeDepth]);
+
   useEffect(() => { const handler = (event: KeyboardEvent) => { if (mode !== "play" || !player) return; const key = event.key.toLowerCase(); const delta = key === "arrowup" || key === "w" ? { gx: 0, gy: -1 } : key === "arrowdown" || key === "s" ? { gx: 0, gy: 1 } : key === "arrowleft" || key === "a" ? { gx: -1, gy: 0 } : key === "arrowright" || key === "d" ? { gx: 1, gy: 0 } : null; if (!delta) return; event.preventDefault(); const gx = player.gx + delta.gx, gy = player.gy + delta.gy; if (!world.terrain[cellKey(gx, gy)] || isCellBlocked(objects, gx, gy)) return; setPlayer({ gx, gy }); }; window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); }, [mode, player, world.terrain, objects]);
   useEffect(() => { const fit = () => setView(fitWorldView(world.gridSize, edgeDepth)); fit(); window.addEventListener("resize", fit); return () => window.removeEventListener("resize", fit); }, [world.gridSize, edgeDepth]);
   useEffect(() => { let active = true; const cleanups = ASSET_LIBRARY.map((asset) => { const image = getAssetSpriteImage(asset); if (!image || (image.complete && image.naturalWidth)) return null; const onLoad = () => { if (active) setAssetSpriteVersion((version) => version + 1); }; image.addEventListener("load", onLoad, { once: true }); return () => image.removeEventListener("load", onLoad); }); return () => { active = false; cleanups.forEach((cleanup) => cleanup?.()); }; }, []);

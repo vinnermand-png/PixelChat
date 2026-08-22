@@ -49,10 +49,8 @@ export interface GameBuildExecutionResult {
 
 const MAP_STORAGE_KEY = "pixelchat-game-maker-v2-map-v1";
 const DEFAULT_WORLD_SIZE = DEFAULT_WORLD_SIZE_CONFIG.width;
-
-function getEditorButton(label: string) {
-  return Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === label);
-}
+const INTERNAL_SAVE_MAP_EVENT = "pixelchat-game-maker-internal-save-map";
+const INTERNAL_LOAD_MAP_EVENT = "pixelchat-game-maker-internal-load-map";
 
 function parseStoredMap(raw: string | null): StoredMap {
   if (!raw) throw new Error("The GameMaker map is not available for build execution.");
@@ -64,16 +62,16 @@ function parseStoredMap(raw: string | null): StoredMap {
 }
 
 function readCurrentMap(): StoredMap {
-  getEditorButton("Save")?.click();
-  return parseStoredMap(localStorage.getItem(MAP_STORAGE_KEY));
+  const request: { map: StoredMap | null } = { map: null };
+  window.dispatchEvent(new CustomEvent(INTERNAL_SAVE_MAP_EVENT, { detail: request }));
+  if (!request.map) throw new Error("The current GameMaker editor state is unavailable for build execution.");
+  return request.map;
 }
 
 function writeAndLoadMap(map: StoredMap): StoredMap {
   localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(map));
   const persisted = parseStoredMap(localStorage.getItem(MAP_STORAGE_KEY));
-  const loadButton = getEditorButton("Load");
-  if (!loadButton) throw new Error("The existing GameMaker Load action is unavailable.");
-  loadButton.click();
+  window.dispatchEvent(new CustomEvent(INTERNAL_LOAD_MAP_EVENT, { detail: { map: persisted } }));
   return persisted;
 }
 
