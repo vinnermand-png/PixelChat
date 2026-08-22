@@ -1,15 +1,18 @@
 import { useState } from "react";
 import { executeCurrentGameBuildTask } from "@/lib/gameBuildPlanner/gameBuildExecution";
 import { materializeCompletedWorld } from "@/lib/gameBuildPlanner/worldMaterialization";
+import { buildAiToolContext, isValidAiToolContext } from "@/lib/aiTool/buildAiToolContext";
 import type { GameBuildPlan } from "@/lib/gameBuildPlanner/gameBuildPlan";
+import type { GameFoundation } from "@/lib/gameFoundation/gameFoundation";
 
 interface GameBuildPlanPanelProps {
   plan: GameBuildPlan | null;
+  foundation: GameFoundation | null;
   onGenerate: () => void;
   onAdvance: () => void;
 }
 
-export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: GameBuildPlanPanelProps) {
+export default function GameBuildPlanPanel({ plan, foundation, onGenerate, onAdvance }: GameBuildPlanPanelProps) {
   const [isOpen, setIsOpen] = useState(true);
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionMessage, setExecutionMessage] = useState<string | null>(null);
@@ -44,6 +47,14 @@ export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: Game
     setExecutionMessage(null);
     setExecutionError(null);
     try {
+      if (import.meta.env.DEV && foundation) {
+        try {
+          const context = buildAiToolContext({ foundation, buildPlan: plan });
+          console.info("[ai-tool-context]", isValidAiToolContext(context) ? context : { invalidContext: context });
+        } catch (contextError) {
+          console.info("[ai-tool-context]", { error: contextError instanceof Error ? contextError.message : "AI Tool Context could not be derived." });
+        }
+      }
       const result = executeCurrentGameBuildTask(plan);
       let summary = result.summary;
       if (currentTask?.title === "Determine decorations") {
