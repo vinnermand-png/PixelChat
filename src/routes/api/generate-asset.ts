@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { requireAiEnabled, AiDisabledError } from "@/lib/ai/aiExecutionGuard";
 
 type OpenAiImageResponse = {
   data?: Array<{ b64_json?: string }>;
@@ -31,6 +32,8 @@ export const Route = createFileRoute("/api/generate-asset")({
           if (prompt.length > MAX_PROMPT_LENGTH) {
             return json({ error: "The prompt is too long." }, 400);
           }
+
+          await requireAiEnabled();
 
           const apiKey = process.env.OPENAI_API_KEY?.trim();
           if (!apiKey) {
@@ -88,6 +91,9 @@ export const Route = createFileRoute("/api/generate-asset")({
 
           return json({ imageBase64 });
         } catch (error) {
+          if (error instanceof AiDisabledError) {
+            return json({ error: error.message }, 503);
+          }
           console.error("OpenAI asset generation failed", error);
           return json({ error: "AI asset generation failed on the server." }, 500);
         }

@@ -20,3 +20,30 @@ export function isMapLibraryState<TMap>(value: unknown): value is MapLibraryStat
     && Array.isArray(state.maps)
     && state.maps.every((entry) => Boolean(entry) && typeof entry === "object" && typeof (entry as MapLibraryRecord<TMap>).savedAt === "number" && Boolean((entry as MapLibraryRecord<TMap>).map));
 }
+
+export function deleteSavedMap<TMap>(mapId: string): MapLibraryState<TMap> {
+  const raw = localStorage.getItem(MAP_LIBRARY_STORAGE_KEY);
+  if (!raw) {
+    return { version: MAP_LIBRARY_VERSION, activeMapId: "", maps: [] };
+  }
+
+  const parsed: unknown = JSON.parse(raw);
+  if (!isMapLibraryState<TMap>(parsed)) {
+    throw new Error("Saved map library is invalid.");
+  }
+
+  const maps = parsed.maps.filter((record) => {
+    const recordMap = record.map as { id?: unknown };
+    return recordMap.id !== mapId;
+  });
+
+  const activeMapId = parsed.activeMapId === mapId ? "" : parsed.activeMapId;
+  const nextLibrary: MapLibraryState<TMap> = {
+    version: MAP_LIBRARY_VERSION,
+    activeMapId: maps.some((record) => (record.map as { id?: unknown }).id === activeMapId) ? activeMapId : "",
+    maps,
+  };
+
+  localStorage.setItem(MAP_LIBRARY_STORAGE_KEY, JSON.stringify(nextLibrary));
+  return nextLibrary;
+}

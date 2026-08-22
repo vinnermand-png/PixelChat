@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { fetchAi } from "../../lib/ai/aiClient";
 import {
   createFoundation,
   DEFAULT_WORLD_SIZE_CONFIG,
@@ -88,7 +89,7 @@ export default function GameCreationDialog({
     setIsGenerating(true);
 
     try {
-      const response = await fetch("/api/generate-game", {
+      const response = await fetchAi("/api/generate-game", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ gameName: name, concept, worldSize }),

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { requireAiEnabled, AiDisabledError } from "@/lib/ai/aiExecutionGuard";
 import { normalizeWorldSizeConfig, type WorldSizeConfig } from "@/lib/gameFoundation/gameFoundation";
 
 type GeneratedGameResponse = {
@@ -200,6 +201,8 @@ export const Route = createFileRoute("/api/generate-game")({
           const gameName = validateString(body.gameName, "gameName", 120);
           const concept = validateString(body.concept, "concept", MAX_CONCEPT_LENGTH);
           const worldSize = validateWorldSize(body.worldSize);
+          await requireAiEnabled();
+
           const apiKey = process.env.OPENAI_API_KEY?.trim();
           if (!apiKey) {
             return json({ error: "AI game generation is not configured on the server. Add OPENAI_API_KEY to the server environment." }, 503);
@@ -266,6 +269,9 @@ export const Route = createFileRoute("/api/generate-game")({
 
           return json(validateGeneratedGame(parsed));
         } catch (error) {
+          if (error instanceof AiDisabledError) {
+            return json({ error: error.message }, 503);
+          }
           console.error("OpenAI game generation failed", error);
           return json({ error: error instanceof Error ? error.message : "AI game generation failed on the server." }, 400);
         }
