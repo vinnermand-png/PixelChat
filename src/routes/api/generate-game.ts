@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { requireAiEnabled, AiDisabledError } from "@/lib/ai/aiExecutionGuard";
+import { AiDisabledError, requireAiEnabled } from "@/lib/ai/aiExecutionGuard";
+import { generateTestGameResponse } from "@/lib/ai/testGameGenerator";
 import { normalizeWorldSizeConfig, type WorldSizeConfig } from "@/lib/gameFoundation/gameFoundation";
 
-type GeneratedGameResponse = {
+export type GeneratedGameResponse = {
   game: { name: string };
   blueprint: {
     concept: string;
@@ -201,7 +202,15 @@ export const Route = createFileRoute("/api/generate-game")({
           const gameName = validateString(body.gameName, "gameName", 120);
           const concept = validateString(body.concept, "concept", MAX_CONCEPT_LENGTH);
           const worldSize = validateWorldSize(body.worldSize);
-          await requireAiEnabled();
+
+          try {
+            await requireAiEnabled();
+          } catch (error) {
+            if (error instanceof AiDisabledError) {
+              return json(validateGeneratedGame(generateTestGameResponse(gameName, concept, worldSize)));
+            }
+            throw error;
+          }
 
           const apiKey = process.env.OPENAI_API_KEY?.trim();
           if (!apiKey) {
