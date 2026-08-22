@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { executeCurrentGameBuildTask } from "@/lib/gameBuildPlanner/gameBuildExecution";
+import { materializeCompletedWorld } from "@/lib/gameBuildPlanner/worldMaterialization";
 import type { GameBuildPlan } from "@/lib/gameBuildPlanner/gameBuildPlan";
 
 interface GameBuildPlanPanelProps {
@@ -44,7 +45,12 @@ export default function GameBuildPlanPanel({ plan, onGenerate, onAdvance }: Game
     setExecutionError(null);
     try {
       const result = executeCurrentGameBuildTask(plan);
-      setExecutionMessage(result.summary);
+      let summary = result.summary;
+      if (currentTask?.title === "Determine decorations") {
+        const materialization = materializeCompletedWorld();
+        summary = `${summary} ${materialization.summary}`;
+      }
+      setExecutionMessage(summary);
       onAdvance();
     } catch (error) {
       setExecutionError(error instanceof Error ? error.message : "Build task execution failed.");
