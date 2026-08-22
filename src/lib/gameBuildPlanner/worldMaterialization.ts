@@ -134,9 +134,29 @@ function explorableZoneTerrain(label: string): TerrainId {
   return "dirt";
 }
 
-function addMaterializedObject(objects: PlacedObject[], object: PlacedObject) {
+function getObjectFootprint(object: PlacedObject) {
+  const footprint = object.assetId === "testLargeTree"
+    ? [{ gx: 0, gy: 0 }, { gx: 1, gy: 0 }, { gx: 0, gy: 1 }, { gx: 1, gy: 1 }]
+    : [{ gx: 0, gy: 0 }];
+  return footprint.map((offset) => ({ gx: object.gx + offset.gx, gy: object.gy + offset.gy }));
+}
+
+function canPlaceObject(objects: PlacedObject[], assetId: string, point: GridPoint, bounds: WorldBounds) {
+  const candidate: PlacedObject = { id: "candidate", assetId, gx: point.gx, gy: point.gy };
+  const candidateCells = getObjectFootprint(candidate);
+  if (candidateCells.some((cell) => !inBounds(cell, bounds))) return false;
+  const occupied = new Set(objects.flatMap(getObjectFootprint).map(cellKey));
+  return !candidateCells.some((cell) => occupied.has(cellKey(cell)));
+}
+
+function addMaterializedObject(objects: PlacedObject[], object: PlacedObject, bounds: WorldBounds, alternatives: GridPoint[]) {
   if (objects.some((candidate) => candidate.id === object.id)) return false;
-  objects.push(object);
+  const candidatePoint = [
+    { gx: object.gx, gy: object.gy },
+    ...alternatives,
+  ].find((point) => canPlaceObject(objects, object.assetId, point, bounds));
+  if (!candidatePoint) return false;
+  objects.push({ ...object, gx: candidatePoint.gx, gy: candidatePoint.gy });
   return true;
 }
 
@@ -149,13 +169,18 @@ function materializeForestMarker(objects: PlacedObject[], zone: ExplorableZone, 
   let changed = false;
   offsets.forEach((offset, index) => {
     const point = { gx: zone.center.gx + offset.gx, gy: zone.center.gy + offset.gy };
-    if (!inBounds(point, dimensions)) return;
+    const alternatives = [
+      { gx: point.gx + 1, gy: point.gy },
+      { gx: point.gx - 1, gy: point.gy },
+      { gx: point.gx, gy: point.gy + 1 },
+      { gx: point.gx, gy: point.gy - 1 },
+    ];
     changed ||= addMaterializedObject(objects, {
       id: `materialized-zone-${zone.id}-${index + 1}`,
       assetId: "testTree",
       gx: point.gx,
       gy: point.gy,
-    });
+    }, dimensions, alternatives);
   });
   return changed;
 }
@@ -163,12 +188,18 @@ function materializeForestMarker(objects: PlacedObject[], zone: ExplorableZone, 
 function materializeLandmark(objects: PlacedObject[], landmark: ImportantLandmark, dimensions: WorldBounds) {
   const point = { gx: landmark.gx, gy: landmark.gy };
   if (!inBounds(point, dimensions)) throw new Error(`Important landmark ${landmark.id} is outside the playable world bounds.`);
+  const alternatives = [
+    { gx: point.gx + 2, gy: point.gy },
+    { gx: point.gx - 2, gy: point.gy },
+    { gx: point.gx, gy: point.gy + 2 },
+    { gx: point.gx, gy: point.gy - 2 },
+  ];
   return addMaterializedObject(objects, {
     id: `materialized-landmark-${landmark.id}`,
     assetId: "testLargeTree",
     gx: point.gx,
     gy: point.gy,
-  });
+  }, dimensions, alternatives);
 }
 
 export function materializeCompletedWorld(): { changed: boolean; summary: string } {
@@ -258,9 +289,7 @@ export function materializeCompletedWorld(): { changed: boolean; summary: string
     if (bounds.minX > bounds.maxX || bounds.minY > bounds.maxY) throw new Error(`Explorable zone ${zone.id} is outside the playable world bounds.`);
     const zoneTerrain = explorableZoneTerrain(zone.label);
     changed ||= materializePointSet(terrain, bounds, zoneTerrain, zones);
-    if (zoneTerrain === "grass") {
-      changed ||= materializeForestMarker(objects, zone, dimensions.bounds);
-    }
+    if (zoneTerrain === "grass") changed ||= materializeForestMarker(objects, zone, dimensions.bounds);
   }
 
   for (const landmark of importantLandmarks) {
