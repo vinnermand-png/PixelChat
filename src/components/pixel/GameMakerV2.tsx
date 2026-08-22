@@ -55,7 +55,7 @@ function isEdgeMaterial(value: unknown): value is EdgeMaterial { return value ==
 function isValidMap(data: unknown): data is PixelChatMapV1 { if (!data || typeof data !== "object") return false; const map = data as Partial<PixelChatMapV1>; return map.version === 1 && typeof map.id === "string" && typeof map.name === "string" && Boolean(map.world) && typeof map.world?.gridSize === "number" && Boolean(map.world?.terrain) && typeof map.world.terrain === "object" && Boolean(map.foundation) && isEdgeMaterial(map.foundation?.edgeMaterial) && typeof map.foundation?.edgeDepth === "number" && Array.isArray(map.objects); }
 function createEmptyMap(id = DEFAULT_MAP_ID, name = DEFAULT_MAP_NAME, gridSize = DEFAULT_GRID_SIZE): PixelChatMapV1 { return { version: 1, id, name, world: { gridSize, terrain: {} }, foundation: { edgeMaterial: "soil", edgeDepth: DEFAULT_EDGE_DEPTH }, objects: [] }; }
 function createLibrary(activeMapId = DEFAULT_MAP_ID, maps: SavedMapRecord[] = []): SavedMapLibrary { return { version: 1, activeMapId, maps }; }
-function readSavedMapLibrary(): SavedMapLibrary {
+function readSavedMapLibrary() {
   try {
     const raw = localStorage.getItem(MAP_LIBRARY_STORAGE_KEY);
     if (raw) {
@@ -134,19 +134,34 @@ export default function GameMakerV2() {
   useEffect(() => {
     const library = readSavedMapLibrary();
     setSavedMaps(library.maps);
-    const active = library.maps.find((record) => record.map.id === library.activeMapId) ?? library.maps[0];
-    if (active && isValidMap(active.map)) {
-      loadMapData(active.map);
-    } else {
-      const initialMap = createEmptyMap();
-      setMapId(initialMap.id);
-      setMapName(initialMap.name);
-      setWorld(initialMap.world);
-      setObjects(initialMap.objects);
-      setEdgeMaterial(initialMap.foundation.edgeMaterial);
-      setEdgeDepth(initialMap.foundation.edgeDepth);
-      setMapStatus("MAP01 ready");
+
+    const currentRaw = localStorage.getItem(MAP_STORAGE_KEY);
+    if (currentRaw) {
+      try {
+        const parsed: unknown = JSON.parse(currentRaw);
+        if (isValidMap(parsed)) {
+          loadMapData(parsed);
+          return;
+        }
+      } catch {
+        // Fall through to a clean MAP01 state.
+      }
     }
+
+    const initialMap = createEmptyMap();
+    setMapId(initialMap.id);
+    setMapName(initialMap.name);
+    setWorld(initialMap.world);
+    setObjects(initialMap.objects);
+    setEdgeMaterial(initialMap.foundation.edgeMaterial);
+    setEdgeDepth(initialMap.foundation.edgeDepth);
+    setHistory(EMPTY_HISTORY);
+    setSelectedObjectId(null);
+    setHover(null);
+    setTool("paint");
+    setMode("edit");
+    setPlayer(null);
+    setMapStatus("MAP01 ready");
   }, []);
 
   useEffect(() => { const handler = (event: KeyboardEvent) => { if (mode !== "play" || !player) return; const key = event.key.toLowerCase(); const delta = key === "arrowup" || key === "w" ? { gx: 0, gy: -1 } : key === "arrowdown" || key === "s" ? { gx: 0, gy: 1 } : key === "arrowleft" || key === "a" ? { gx: -1, gy: 0 } : key === "arrowright" || key === "d" ? { gx: 1, gy: 0 } : null; if (!delta) return; event.preventDefault(); const gx = player.gx + delta.gx, gy = player.gy + delta.gy; if (!world.terrain[cellKey(gx, gy)] || isCellBlocked(objects, gx, gy)) return; setPlayer({ gx, gy }); }; window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); }, [mode, player, world.terrain, objects]);
