@@ -45,8 +45,7 @@ function parseStoredMap(raw: string | null): StoredMap {
 }
 
 function getBaseTerrainAt(point: GridPoint, zones: TerrainZone[]) {
-  const zone = zones.find((candidate) => inBounds(point, candidate.bounds));
-  return zone?.terrainId;
+  return zones.find((candidate) => inBounds(point, candidate.bounds))?.terrainId;
 }
 
 function setMaterializedTerrain(
@@ -57,10 +56,14 @@ function setMaterializedTerrain(
 ) {
   const key = cellKey(point);
   const current = terrain[key];
-  if (!current || current === baseTerrain) terrain[key] = terrainId;
+  if (!current || current === baseTerrain) {
+    terrain[key] = terrainId;
+    return current !== terrainId;
+  }
+  return false;
 }
 
-function markArea(
+function materializeArea(
   terrain: Record<string, TerrainId>,
   bounds: WorldBounds,
   terrainId: TerrainId,
@@ -77,10 +80,10 @@ function markArea(
     { gx: center.gx, gy: center.gy - 1 },
     { gx: center.gx, gy: center.gy + 1 },
   ];
-  for (const point of points) {
-    if (!inBounds(point, bounds)) continue;
-    setMaterializedTerrain(terrain, point, terrainId, getBaseTerrainAt(point, zones));
-  }
+  return points.reduce((didChange, point) => {
+    if (!inBounds(point, bounds)) return didChange;
+    return setMaterializedTerrain(terrain, point, terrainId, getBaseTerrainAt(point, zones)) || didChange;
+  }, false);
 }
 
 export function materializeCompletedWorld(): { changed: boolean; summary: string } {
@@ -106,8 +109,9 @@ export function materializeCompletedWorld(): { changed: boolean; summary: string
   const terrain = { ...map.world.terrain };
   let changed = false;
 
-  if (map.world.gridSize !== Math.max(dimensions.width, dimensions.height)) {
-    map.world.gridSize = Math.max(dimensions.width, dimensions.height);
+  const gridSize = Math.max(dimensions.width, dimensions.height);
+  if (map.world.gridSize !== gridSize) {
+    map.world.gridSize = gridSize;
     changed = true;
   }
   if (map.world.width !== dimensions.width || map.world.height !== dimensions.height) {
@@ -119,27 +123,32 @@ export function materializeCompletedWorld(): { changed: boolean; summary: string
   for (const path of paths) {
     for (const point of path.points) {
       if (!inBounds(point, dimensions.bounds)) throw new Error("A persisted terrain path is outside the playable world bounds.");
-      const before = terrain[cellKey(point)];
-      setMaterializedTerrain(terrain, point, path.terrainId, getBaseTerrainAt(point, zones));
-      changed ||= before !== terrain[cellKey(point)];
+      changed ||= setMaterializedTerrain(terrain, point, path.terrainId, getBaseTerrainAt(point, zones));
     }
   }
 
-  markArea(terrain, centralGameplayArea.bounds, "dirt", zones);
+  changed ||= materializeArea(terrain, centralGameplayArea.bounds, "dirt", zones);
 
-  if (!inBounds({ gx: playerEntry.gx, gy: playerEntry.gy }, dimensions.bounds)) {
+  const entryPoint = { gx: playerEntry.gx, gy: playerEntry.gy };
+  if (!inBounds(entryPoint, dimensions.bounds)) {
     throw new Error("The player entry is outside the playable world bounds.");
   }
-  const entryBefore = terrain[cellKey(playerEntry)];
-  setMaterializedTerrain(terrain, playerEntry, "stone", getBaseTerrainAt(playerEntry, zones));
-  changed ||= entryBefore !== terrain[cellKey(playerEntry)];
+  const pathPoints = new Set(paths.flatMap((path) => path.points.map(cellKey)));
+  const entryKey = cellKey(entryPoint);
+  const entryCurrent = terrain[entryKey];
+  if (entryCurrent === undefined || entryCurrent === getBaseTerrainAt(entryPoint, zones) || (entryCurrent === "dirt" && !pathPoints.has(entryKey))) {
+    if (entryCurrent !== "stone") {
+      terrain[entryKey] = "stone";
+      changed = true;
+    }
+  }
 
   if (JSON.stringify(map.world.terrain) !== JSON.stringify(terrain)) {
     map.world.terrain = terrain;
     changed = true;
   }
 
-  if (!changed) return { changed: false, summary: "World already materialized; no duplicate terrain was added." };
+  if (!changed) return { changed: false, summary: "World already materialized; no duplicate terrain or markers were added." };
 
   localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(map));
   const loadButton = Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Load");
