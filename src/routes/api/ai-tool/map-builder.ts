@@ -64,6 +64,25 @@ function extractResponseText(payload: OpenAiResponsesPayload): string | undefine
     ?.text;
 }
 
+function describeSpatialLayout(request: AiToolRequestV1): string {
+  const spatial = request.context.map.spatialLayout;
+  if (!spatial) return "";
+  const lines = spatial.regions.map((region) => {
+    const displayName = region.region.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join("-");
+    const parts: string[] = [];
+    const objectParts = Object.entries(region.countsPerAssetId).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([assetId, count]) => `${assetId} x${count}`);
+    if (objectParts.length) parts.push(objectParts.join(", "));
+    if (region.dominantTerrainId && region.dominantTerrainShare !== undefined) {
+      parts.push(region.dominantTerrainShare >= 60 ? `mostly ${region.dominantTerrainId} ground` : "mixed terrain");
+    }
+    const freeRatio = region.totalCells > 0 ? region.freeCells / region.totalCells : 0;
+    if (freeRatio >= 0.6) parts.push("open buildable space");
+    else if (freeRatio < 0.2) parts.push("densely occupied");
+    return `- ${displayName}: ${parts.join(", ") || "undeveloped"}`;
+  });
+  return ["Spatial layout:", ...lines].join("\n");
+}
+
 function describeMapBuilderContext(request: AiToolRequestV1): string {
   const context = request.context;
   const terrainCounts = Object.entries(context.map.terrainSummary.countsPerTerrainId).map(([terrainId, count]) => `${terrainId}: ${count}`).join(", ") || "none";
@@ -85,6 +104,7 @@ function describeMapBuilderContext(request: AiToolRequestV1): string {
     dominantTerrain,
     `Placed objects: ${context.map.objects.length} [${objectCounts}]`,
     buildable,
+    describeSpatialLayout(request),
     `Key locations: ${keyLocations}`,
     `World Seeds: ${seeds}`,
     context.dna?.worldIdentity ? `World identity: ${context.dna.worldIdentity}` : "",
@@ -128,7 +148,7 @@ export const Route = createFileRoute("/api/ai-tool/map-builder")({
                   role: "system",
                   content: [{
                     type: "input_text",
-                    text: `You are the PixelChat Map Builder assistant. The user describes a change they want for their current pixel world map. Propose how to fulfill that request as a short list of read-only operations. You must NOT change anything, apply anything, or produce coordinates. Return ONLY JSON matching the schema: {"version":2,"summary":"...","operations":[...]}. The summary must concretely restate what you propose, including any named locations from the user's wording. Each operation must be exactly one of: paint-terrain (fields: terrain, target) or place-object (fields: object, target). Use ONLY these terrain identifiers: ${TERRAIN_ID_LIST}. Use ONLY these object identifiers: ${OBJECT_ID_LIST}. Every target is a short kebab-case semantic area label (for example 'forest-gathering-clearing'), never a coordinate or cell reference. Do not output prose outside the JSON.`,
+                    text: `You are the PixelChat Map Builder assistant, acting as a pixel-art world designer rather than a placement algorithm. The user describes a change they want for their current pixel world map. Study the full current map context first: existing terrain patterns and their distribution across regions, existing object clusters, key locations, world identity, and the user's request. Propose the design that best composes with what already exists on this specific platform: natural transitions between areas, framing by existing features like tree clusters or paths, clear focal points, visual balance, and meaningful placement relative to the current layout. Free space is only a constraint - it is never the reason to build somewhere. Use the Spatial layout section to understand where existing design lives. You must NOT change anything, apply anything, or produce coordinates. Return ONLY JSON matching the schema: {"version":2,"summary":"...","operations":[...]}. The summary must concretely restate your proposed design and why it fits the current map, including any named locations from the user's wording. Each operation must be exactly one of: paint-terrain (fields: terrain, target) or place-object (fields: object, target). Use ONLY these terrain identifiers: ${TERRAIN_ID_LIST}. Use ONLY these object identifiers: ${OBJECT_ID_LIST}. Every target is a short kebab-case semantic area label (for example 'central-gathering-area', 'upper-forest-edge', 'pathside-clearing'), never a coordinate or cell reference; prefer labels whose wording reflects where the design sits relative to the existing layout (regions are described as upper/center/lower and left/center/right). Do not output prose outside the JSON.`,
                   }],
                 },
                 {

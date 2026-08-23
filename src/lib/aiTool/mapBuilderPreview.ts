@@ -44,6 +44,36 @@ function resolvePatchBounds(index: number, gridSize: number): MapBuilderPreviewT
   return { label: "", minX, minY, maxX: minX + size - 1, maxY: minY + size - 1 };
 }
 
+const SPATIAL_REGION_GRID_SIZE = 3;
+
+function spatialBandBounds(gridSize: number): Array<{ start: number; end: number }> {
+  const third = Math.max(0, Math.floor(gridSize / SPATIAL_REGION_GRID_SIZE));
+  return [
+    { start: 0, end: third },
+    { start: third, end: gridSize - third },
+    { start: gridSize - third, end: gridSize },
+  ];
+}
+
+function resolveRegionAnchor(label: string, gridSize: number): { gx: number; gy: number } | null {
+  const text = label.toLowerCase();
+  const mentionsCenter = /\bcent(er|ral)\b|middle/.test(text);
+  let row = -1;
+  if (/upper|\btop\b|north/.test(text)) row = 0;
+  else if (/lower|\bbottom\b|south/.test(text)) row = 2;
+  else if (mentionsCenter) row = 1;
+  let col = -1;
+  if (/left|west/.test(text)) col = 0;
+  else if (/right|east/.test(text)) col = 2;
+  else if (mentionsCenter) col = 1;
+  if (row < 0 && col < 0) return null;
+  if (row < 0) row = 1;
+  if (col < 0) col = 1;
+  const bands = spatialBandBounds(gridSize);
+  const bandCenter = (index: number) => bands[index].start + Math.floor((bands[index].end - bands[index].start) / 2);
+  return { gx: bandCenter(col), gy: bandCenter(row) };
+}
+
 function footprintCellsForAsset(assetId: string, gx: number, gy: number): Array<{ gx: number; gy: number }> {
   const asset = ASSET_LIBRARY.find((candidate) => candidate.id === assetId);
   const footprint = asset?.collision.enabled ? asset.collision.footprint : [{ gx: 0, gy: 0 }];
@@ -57,8 +87,28 @@ export function buildMapBuilderPreviewPlan(map: MapBuilderPreviewMapInput, opera
   }
 
   const targetAreas = new Map<string, MapBuilderPreviewTargetArea>();
+  const usedRegionAnchors = new Set<string>();
   targetLabels.forEach((label, index) => {
-    targetAreas.set(label, { ...resolvePatchBounds(index, map.gridSize), label });
+    const anchor = resolveRegionAnchor(label, map.gridSize);
+    let bounds: MapBuilderPreviewTargetArea;
+    if (anchor) {
+      const anchorKey = `${anchor.gx}:${anchor.gy}`;
+      if (usedRegionAnchors.has(anchorKey)) {
+        bounds = resolvePatchBounds(index, map.gridSize);
+      } else {
+        usedRegionAnchors.add(anchorKey);
+        const size = Math.min(PREVIEW_PATCH_SIZE, map.gridSize);
+        const half = Math.floor(size / 2);
+        const maxX = Math.max(0, map.gridSize - size);
+        const maxY = Math.max(0, map.gridSize - size);
+        const minX = Math.min(Math.max(0, anchor.gx - half), maxX);
+        const minY = Math.min(Math.max(0, anchor.gy - half), maxY);
+        bounds = { label: "", minX, minY, maxX: minX + size - 1, maxY: minY + size - 1 };
+      }
+    } else {
+      bounds = resolvePatchBounds(index, map.gridSize);
+    }
+    targetAreas.set(label, { ...bounds, label });
   });
 
   const terrainCells: MapBuilderPreviewTerrainCell[] = [];

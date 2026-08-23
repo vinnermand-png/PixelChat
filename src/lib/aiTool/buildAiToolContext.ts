@@ -71,6 +71,20 @@ export interface AiToolContextV1BuildableSpace {
   freeCells: number;
 }
 
+export interface AiToolContextV1SpatialRegion {
+  region: string;
+  totalCells: number;
+  freeCells: number;
+  countsPerAssetId: Record<string, number>;
+  dominantTerrainId?: string;
+  dominantTerrainShare?: number;
+}
+
+export interface AiToolContextV1SpatialLayout {
+  regionGridSize: 3;
+  regions: AiToolContextV1SpatialRegion[];
+}
+
 export interface AiToolContextV1Map {
   id: string;
   name: string;
@@ -80,6 +94,7 @@ export interface AiToolContextV1Map {
   objects: Array<{ id: string; assetId: string; gx: number; gy: number }>;
   objectsSummary?: AiToolContextV1ObjectsSummary;
   buildableSpace?: AiToolContextV1BuildableSpace;
+  spatialLayout?: AiToolContextV1SpatialLayout;
   structure?: AiToolContextV1MapStructure;
 }
 
@@ -129,6 +144,86 @@ function computeBuildableSpace(gridSize: number, terrainSummary: AiToolContextV1
     paintedCells: terrainSummary.paintedCells,
     occupiedByObjectCells,
     freeCells: Math.max(0, gridSizeCells - terrainSummary.paintedCells - occupiedByObjectCells),
+  };
+}
+
+const SPATIAL_REGION_GRID_SIZE = 3;
+const SPATIAL_ROW_NAMES = ["upper", "center", "lower"] as const;
+const SPATIAL_COL_NAMES = ["left", "center", "right"] as const;
+
+function spatialRegionName(row: number, col: number): string {
+  if (row === 1 && col === 1) return "center";
+  return `${SPATIAL_ROW_NAMES[row]}-${SPATIAL_COL_NAMES[col]}`;
+}
+
+function spatialBandBounds(gridSize: number): Array<{ start: number; end: number }> {
+  const third = Math.max(0, Math.floor(gridSize / SPATIAL_REGION_GRID_SIZE));
+  return [
+    { start: 0, end: third },
+    { start: third, end: gridSize - third },
+    { start: gridSize - third, end: gridSize },
+  ];
+}
+
+function computeSpatialLayout(world: { gridSize: number; terrain: Record<string, string> }, objects: Array<{ assetId: string; gx: number; gy: number }>): AiToolContextV1SpatialLayout {
+  const bands = spatialBandBounds(world.gridSize);
+  interface RegionAccumulator {
+    totalCells: number;
+    paintedCells: number;
+    occupiedByObjectCells: number;
+    countsPerAssetId: Record<string, number>;
+    countsPerTerrainId: Record<string, number>;
+  }
+  const regions: RegionAccumulator[] = [];
+  for (let row = 0; row < SPATIAL_REGION_GRID_SIZE; row++) {
+    for (let col = 0; col < SPATIAL_REGION_GRID_SIZE; col++) {
+      regions.push({
+        totalCells: (bands[row].end - bands[row].start) * (bands[col].end - bands[col].start),
+        paintedCells: 0,
+        occupiedByObjectCells: 0,
+        countsPerAssetId: {},
+        countsPerTerrainId: {},
+      });
+    }
+  }
+  const regionIndexForCell = (gx: number, gy: number): number => {
+    const row = bands.findIndex((band) => gy >= band.start && gy < band.end);
+    const col = bands.findIndex((band) => gx >= band.start && gx < band.end);
+    if (row < 0 || col < 0) return -1;
+    return row * SPATIAL_REGION_GRID_SIZE + col;
+  };
+  for (const [cellKey, terrainId] of Object.entries(world.terrain)) {
+    const [gx, gy] = cellKey.split(",").map((value) => Number.parseInt(value, 10));
+    if (!Number.isInteger(gx) || !Number.isInteger(gy)) continue;
+    const index = regionIndexForCell(gx, gy);
+    if (index < 0) continue;
+    regions[index].paintedCells += 1;
+    regions[index].countsPerTerrainId[terrainId] = (regions[index].countsPerTerrainId[terrainId] ?? 0) + 1;
+  }
+  for (const object of objects) {
+    const anchorIndex = regionIndexForCell(object.gx, object.gy);
+    if (anchorIndex >= 0) {
+      regions[anchorIndex].countsPerAssetId[object.assetId] = (regions[anchorIndex].countsPerAssetId[object.assetId] ?? 0) + 1;
+    }
+    const footprint = getAsset(object.assetId as AssetId)?.collision.footprint ?? [{ gx: 0, gy: 0 }];
+    for (const offset of footprint) {
+      const index = regionIndexForCell(object.gx + offset.gx, object.gy + offset.gy);
+      if (index >= 0) regions[index].occupiedByObjectCells += 1;
+    }
+  }
+  return {
+    regionGridSize: 3,
+    regions: regions.map((region, index) => {
+      const dominantEntries = Object.entries(region.countsPerTerrainId).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const dominant = dominantEntries[0];
+      return {
+        region: spatialRegionName(Math.floor(index / SPATIAL_REGION_GRID_SIZE), index % SPATIAL_REGION_GRID_SIZE),
+        totalCells: region.totalCells,
+        freeCells: Math.max(0, region.totalCells - region.paintedCells - region.occupiedByObjectCells),
+        countsPerAssetId: region.countsPerAssetId,
+        ...(dominant ? { dominantTerrainId: dominant[0], dominantTerrainShare: Math.round((dominant[1] / region.paintedCells) * 100) } : {}),
+      };
+    }),
   };
 }
 
@@ -182,6 +277,7 @@ export function buildAiToolContext(input: BuildAiToolContextInput): AiToolContex
       objects: liveMap.objects.map((object) => ({ id: object.id, assetId: object.assetId, gx: object.gx, gy: object.gy })),
       objectsSummary: summarizeObjects(liveMap.objects),
       buildableSpace: computeBuildableSpace(liveMap.world.gridSize, terrainSummary, liveMap.objects),
+      spatialLayout: computeSpatialLayout(liveMap.world, liveMap.objects),
       structure,
     },
   };
@@ -241,6 +337,31 @@ export function isValidAiToolContext(value: unknown): value is AiToolContextV1 {
     if (buildable.paintedCells !== summary.paintedCells) return false;
     const expectedFreeCells = Math.max(0, buildable.gridSizeCells - buildable.paintedCells - buildable.occupiedByObjectCells);
     if (buildable.freeCells !== expectedFreeCells) return false;
+  }
+
+  if (map.spatialLayout !== undefined) {
+    const spatial = map.spatialLayout;
+    if (!spatial || typeof spatial !== "object") return false;
+    if (spatial.regionGridSize !== SPATIAL_REGION_GRID_SIZE) return false;
+    if (!Array.isArray(spatial.regions)) return false;
+    const seenRegionNames = new Set<string>();
+    let totalRegionCells = 0;
+    for (const region of spatial.regions) {
+      if (!region || typeof region !== "object" || !isNonEmptyString(region.region)) return false;
+      if (seenRegionNames.has(region.region)) return false;
+      seenRegionNames.add(region.region);
+      const regionFields = [region.totalCells, region.freeCells];
+      if (!regionFields.every((field) => Number.isInteger(field) && (field as number) >= 0)) return false;
+      totalRegionCells += region.totalCells;
+      if (!region.countsPerAssetId || typeof region.countsPerAssetId !== "object") return false;
+      if (!Object.values(region.countsPerAssetId).every((count) => Number.isInteger(count) && count > 0)) return false;
+      const hasDominant = region.dominantTerrainId !== undefined;
+      const hasShare = region.dominantTerrainShare !== undefined;
+      if (hasDominant !== hasShare) return false;
+      if (hasDominant && (!isNonEmptyString(region.dominantTerrainId) || !Number.isInteger(region.dominantTerrainShare) || (region.dominantTerrainShare as number) < 1 || (region.dominantTerrainShare as number) > 100)) return false;
+      if (region.freeCells > region.totalCells) return false;
+    }
+    if (totalRegionCells !== map.gridSize * map.gridSize) return false;
   }
 
   if (context.dna !== undefined && !isValidDnaContent(context.dna)) return false;
