@@ -67,13 +67,24 @@ function extractResponseText(payload: OpenAiResponsesPayload): string | undefine
 function describeMapBuilderContext(request: AiToolRequestV1): string {
   const context = request.context;
   const terrainCounts = Object.entries(context.map.terrainSummary.countsPerTerrainId).map(([terrainId, count]) => `${terrainId}: ${count}`).join(", ") || "none";
+  const objectCounts = context.map.objectsSummary
+    ? Object.entries(context.map.objectsSummary.countsPerAssetId).map(([assetId, count]) => `${assetId} x${count}`).join(", ") || "none"
+    : "unknown";
+  let dominantTerrain = "";
+  if (context.map.terrainSummary.paintedCells > 0) {
+    const [terrainId, count] = Object.entries(context.map.terrainSummary.countsPerTerrainId).sort((a, b) => b[1] - a[1])[0];
+    dominantTerrain = `Dominant terrain: ${terrainId} (${Math.round((count / context.map.terrainSummary.paintedCells) * 100)}%)`;
+  }
+  const buildable = context.map.buildableSpace ? `Buildable space: ${context.map.buildableSpace.freeCells} of ${context.map.buildableSpace.gridSizeCells} cells free` : "";
   const seeds = context.worldSeeds?.map((seed) => `${seed.label} (${seed.kind})`).join(", ") || "none";
   const keyLocations = context.map.structure?.keyLocations.length ? context.map.structure.keyLocations.map((location) => location.label).join(", ") : "none";
   return [
     `Game: ${context.game.name}`,
     `Active map: ${context.map.name} (${context.map.id}), grid ${context.map.gridSize}x${context.map.gridSize}`,
     `Painted terrain cells: ${context.map.terrainSummary.paintedCells} [${terrainCounts}]`,
-    `Placed objects: ${context.map.objects.length}`,
+    dominantTerrain,
+    `Placed objects: ${context.map.objects.length} [${objectCounts}]`,
+    buildable,
     `Key locations: ${keyLocations}`,
     `World Seeds: ${seeds}`,
     context.dna?.worldIdentity ? `World identity: ${context.dna.worldIdentity}` : "",

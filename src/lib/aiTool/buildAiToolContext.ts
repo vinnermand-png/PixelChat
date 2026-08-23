@@ -9,6 +9,8 @@ import {
   type WorldSeedKeyLocation,
 } from "@/lib/gameFoundation/gameFoundation";
 import type { GameDiscoverySession } from "@/lib/gameDiscovery/gameDiscovery";
+import { getAsset } from "@/components/pixel/assets/assetLibrary";
+import type { AssetId } from "@/components/pixel/assets/types";
 
 const INTERNAL_SAVE_MAP_EVENT = "pixelchat-game-maker-internal-save-map";
 
@@ -57,6 +59,18 @@ export interface AiToolContextV1MapStructure {
   paths: Array<{ id: string; label: string; pointCount: number }>;
 }
 
+export interface AiToolContextV1ObjectsSummary {
+  total: number;
+  countsPerAssetId: Record<string, number>;
+}
+
+export interface AiToolContextV1BuildableSpace {
+  gridSizeCells: number;
+  paintedCells: number;
+  occupiedByObjectCells: number;
+  freeCells: number;
+}
+
 export interface AiToolContextV1Map {
   id: string;
   name: string;
@@ -64,6 +78,8 @@ export interface AiToolContextV1Map {
   foundation: { edgeMaterial: string; edgeDepth: number };
   terrainSummary: AiToolContextV1TerrainSummary;
   objects: Array<{ id: string; assetId: string; gx: number; gy: number }>;
+  objectsSummary?: AiToolContextV1ObjectsSummary;
+  buildableSpace?: AiToolContextV1BuildableSpace;
   structure?: AiToolContextV1MapStructure;
 }
 
@@ -92,6 +108,28 @@ function summarizeTerrain(terrain: Record<string, string>): AiToolContextV1Terra
     paintedCells += 1;
   }
   return { paintedCells, countsPerTerrainId };
+}
+
+function summarizeObjects(objects: Array<{ assetId: string }>): AiToolContextV1ObjectsSummary {
+  const countsPerAssetId: Record<string, number> = {};
+  for (const object of objects) {
+    countsPerAssetId[object.assetId] = (countsPerAssetId[object.assetId] ?? 0) + 1;
+  }
+  return { total: objects.length, countsPerAssetId };
+}
+
+function computeBuildableSpace(gridSize: number, terrainSummary: AiToolContextV1TerrainSummary, objects: Array<{ assetId: string }>): AiToolContextV1BuildableSpace {
+  let occupiedByObjectCells = 0;
+  for (const object of objects) {
+    occupiedByObjectCells += getAsset(object.assetId as AssetId)?.collision.footprint.length ?? 1;
+  }
+  const gridSizeCells = gridSize * gridSize;
+  return {
+    gridSizeCells,
+    paintedCells: terrainSummary.paintedCells,
+    occupiedByObjectCells,
+    freeCells: Math.max(0, gridSizeCells - terrainSummary.paintedCells - occupiedByObjectCells),
+  };
 }
 
 function projectDna(dna?: GameDnaVersion): GameDnaContent | undefined {
@@ -128,6 +166,7 @@ export function buildAiToolContext(input: BuildAiToolContextInput): AiToolContex
   if (!input?.foundation?.game?.id) throw new Error("AI Tool Context requires an active Game Foundation.");
   const liveMap = readLiveCurrentMapSnapshot();
   const structure = projectStructure(liveMap.world.structure);
+  const terrainSummary = summarizeTerrain(liveMap.world.terrain);
   return {
     version: 1,
     generatedAt: new Date().toISOString(),
@@ -139,8 +178,10 @@ export function buildAiToolContext(input: BuildAiToolContextInput): AiToolContex
       name: liveMap.name,
       gridSize: liveMap.world.gridSize,
       foundation: { edgeMaterial: liveMap.foundation.edgeMaterial, edgeDepth: liveMap.foundation.edgeDepth },
-      terrainSummary: summarizeTerrain(liveMap.world.terrain),
+      terrainSummary,
       objects: liveMap.objects.map((object) => ({ id: object.id, assetId: object.assetId, gx: object.gx, gy: object.gy })),
+      objectsSummary: summarizeObjects(liveMap.objects),
+      buildableSpace: computeBuildableSpace(liveMap.world.gridSize, terrainSummary, liveMap.objects),
       structure,
     },
   };
@@ -179,6 +220,28 @@ export function isValidAiToolContext(value: unknown): value is AiToolContextV1 {
 
   if (!Array.isArray(map.objects)) return false;
   if (!map.objects.every((object) => object && isNonEmptyString(object.id) && isNonEmptyString(object.assetId) && isGridPoint(object))) return false;
+
+  if (map.objectsSummary !== undefined) {
+    const objectsSummary = map.objectsSummary;
+    if (!objectsSummary || typeof objectsSummary !== "object") return false;
+    if (!Number.isInteger(objectsSummary.total) || (objectsSummary.total as number) < 0) return false;
+    if (!objectsSummary.countsPerAssetId || typeof objectsSummary.countsPerAssetId !== "object") return false;
+    const assetCounts = Object.values(objectsSummary.countsPerAssetId);
+    if (!assetCounts.every((count) => Number.isInteger(count) && count > 0)) return false;
+    if (assetCounts.reduce<number>((total, count) => total + count, 0) !== objectsSummary.total) return false;
+    if (objectsSummary.total !== map.objects.length) return false;
+  }
+
+  if (map.buildableSpace !== undefined) {
+    const buildable = map.buildableSpace;
+    if (!buildable || typeof buildable !== "object") return false;
+    const buildableFields = [buildable.gridSizeCells, buildable.paintedCells, buildable.occupiedByObjectCells, buildable.freeCells];
+    if (!buildableFields.every((field) => Number.isInteger(field) && (field as number) >= 0)) return false;
+    if (buildable.gridSizeCells !== map.gridSize * map.gridSize) return false;
+    if (buildable.paintedCells !== summary.paintedCells) return false;
+    const expectedFreeCells = Math.max(0, buildable.gridSizeCells - buildable.paintedCells - buildable.occupiedByObjectCells);
+    if (buildable.freeCells !== expectedFreeCells) return false;
+  }
 
   if (context.dna !== undefined && !isValidDnaContent(context.dna)) return false;
 
